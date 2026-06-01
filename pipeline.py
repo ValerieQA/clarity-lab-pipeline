@@ -221,7 +221,8 @@ def publish_to_wix(title, website_text, image_url):
                 "image": {"url": image_url}
             },
             "featured": False,
-            "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"]
+            "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"],
+            "memberId": "4d7e0085-753e-4aee-b7c6-ed66431fd9c6"
         }
     }
 
