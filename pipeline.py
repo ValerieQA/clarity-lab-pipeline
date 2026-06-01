@@ -139,10 +139,9 @@ Style requirements:
 
     print("[DALL-E] Generating image...")
     response = client.images.generate(
-        model="dall-e-3",
+        model="dall-e-2",
         prompt=image_prompt,
         size="1024x1024",
-        quality="standard",
         n=1
     )
 
