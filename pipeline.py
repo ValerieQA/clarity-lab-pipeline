@@ -8,8 +8,9 @@ import os
 import csv
 import re
 import time
-import requests
+import base64
 import tempfile
+import requests
 from datetime import datetime
 from openai import OpenAI
 import cloudinary
@@ -35,7 +36,6 @@ FB_PAGE_TOKEN       = os.environ["FB_PAGE_TOKEN"]
 
 TOPICS_FILE         = "topics.csv"
 PROMPT_FILE         = "config/prompt.md"
-GEO_PROMPT_FILE     = "config/geo_prompt.md"
 
 # ============================================================
 # STEP 1: Pick next topic from topics.csv
@@ -68,7 +68,7 @@ def mark_topic_published(index, rows, post_url):
     print(f"[TOPICS] Marked as Published")
 
 # ============================================================
-# STEP 2: Generate article, Instagram post, GEO block via GPT
+# STEP 2: Generate article, Instagram post via GPT
 # ============================================================
 
 def load_prompt():
@@ -118,7 +118,7 @@ def parse_content(raw_text):
     return sections
 
 # ============================================================
-# STEP 3: Generate image via DALL-E
+# STEP 3: Generate image via gpt-image-1
 # ============================================================
 
 def generate_image(title, core_observation):
@@ -137,23 +137,31 @@ Style requirements:
 - Aspect ratio: square (1:1)
 """
 
-    print("[DALL-E] Generating image...")
+    print("[GPT-IMAGE] Generating image...")
     response = client.images.generate(
-        model="dall-e-2",
+        model="gpt-image-1",
         prompt=image_prompt,
         size="1024x1024",
         n=1
     )
 
-    image_url = response.data[0].url
-    print(f"[DALL-E] Image generated: {image_url[:60]}...")
-    return image_url
+    # gpt-image-1 returns base64
+    image_data = response.data[0].b64_json
+    image_bytes = base64.b64decode(image_data)
+
+    # Save to temp file
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp.write(image_bytes)
+        tmp_path = tmp.name
+
+    print(f"[GPT-IMAGE] Image saved to: {tmp_path}")
+    return tmp_path
 
 # ============================================================
 # STEP 4: Upload image to Cloudinary
 # ============================================================
 
-def upload_to_cloudinary(image_url, title):
+def upload_to_cloudinary(image_path, title):
     cloudinary.config(
         cloud_name=CLOUDINARY_CLOUD,
         api_key=CLOUDINARY_KEY,
@@ -164,7 +172,7 @@ def upload_to_cloudinary(image_url, title):
 
     print(f"[CLOUDINARY] Uploading image...")
     result = cloudinary.uploader.upload(
-        image_url,
+        image_path,
         public_id=public_id,
         overwrite=False,
         resource_type="image"
@@ -264,7 +272,7 @@ def publish_to_instagram(caption, image_url):
         raise Exception(f"Instagram container error: {container}")
 
     container_id = container["id"]
-    time.sleep(5)  # wait for container to be ready
+    time.sleep(5)
 
     print("[INSTAGRAM] Publishing...")
     publish_response = requests.post(
@@ -330,10 +338,10 @@ def run_pipeline():
     website     = content["website"]
 
     # Step 3: Generate image
-    image_url_raw = generate_image(title, topic["Core Observation"])
+    image_path = generate_image(title, topic["Core Observation"])
 
     # Step 4: Upload to Cloudinary
-    image_url = upload_to_cloudinary(image_url_raw, title)
+    image_url = upload_to_cloudinary(image_path, title)
 
     # Step 5: Publish to Wix
     post_url = publish_to_wix(title, website, image_url)
@@ -350,8 +358,8 @@ def run_pipeline():
     mark_topic_published(index, rows, post_url)
 
     print(f"\n{'='*60}")
-    print(f"✅ Pipeline complete: {title}")
-    print(f"   Article: {post_url}")
+    print(f"Pipeline complete: {title}")
+    print(f"Article: {post_url}")
     print(f"{'='*60}\n")
 
 if __name__ == "__main__":
