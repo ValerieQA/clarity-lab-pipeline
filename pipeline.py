@@ -199,7 +199,52 @@ def convert_html_to_ricos(html_content, wix_headers):
 def text_to_html(text):
     paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
     return "".join(f"<p>{p}</p>" for p in paragraphs)
-
+    
+def upload_image_to_wix(image_url, wix_headers):
+    print("[WIX] Uploading image to Wix Media...")
+    
+    # Step 1: Get upload URL
+    upload_url_response = requests.post(
+        "https://www.wixapis.com/site-media/v1/files/generate-upload-url",
+        headers=wix_headers,
+        json={
+            "mimeType": "image/png",
+            "fileName": "clarity-lab-cover.png"
+        }
+    )
+    
+    if upload_url_response.status_code not in (200, 201):
+        print(f"[WIX] Could not get upload URL: {upload_url_response.text}")
+        return image_url  # fallback to Cloudinary URL
+    
+    upload_data = upload_url_response.json()
+    wix_upload_url = upload_data.get("uploadUrl")
+    
+    if not wix_upload_url:
+        print("[WIX] No upload URL returned, using Cloudinary URL")
+        return image_url
+    
+    # Step 2: Download image from Cloudinary
+    img_response = requests.get(image_url)
+    if img_response.status_code != 200:
+        print("[WIX] Could not download image from Cloudinary")
+        return image_url
+    
+    # Step 3: Upload to Wix
+    upload_response = requests.put(
+        wix_upload_url,
+        data=img_response.content,
+        headers={"Content-Type": "image/png"}
+    )
+    
+    if upload_response.status_code not in (200, 201):
+        print(f"[WIX] Upload failed: {upload_response.text}")
+        return image_url
+    
+    wix_image_url = upload_response.json().get("file", {}).get("url", image_url)
+    print(f"[WIX] Image uploaded to Wix: {wix_image_url[:60]}...")
+    return wix_image_url
+    
 def publish_to_wix(title, website_text, image_url):
     wix_headers = {
         "Authorization": WIX_API_KEY,
