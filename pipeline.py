@@ -1,7 +1,13 @@
 """
-Clarity Lab — Automated Content Pipeline
+Clarity Lab — Automated Content Pipeline v3
 Runs via GitHub Actions on schedule (Mon/Wed/Fri)
 One topic per run: article → image → publish to Wix + Instagram + Facebook
+
+Changes in v3:
+- Added proper status code checks at every step
+- Image uploaded to Wix Media before post creation
+- Draft verified before publishing
+- Better error messages
 """
 
 import os
@@ -17,28 +23,38 @@ import cloudinary
 import cloudinary.uploader
 
 # ============================================================
-# CONFIG — all secrets from GitHub Secrets / environment vars
+# CONFIG
 # ============================================================
 
-OPENAI_API_KEY      = os.environ["OPENAI_API_KEY"]
-CLOUDINARY_CLOUD    = os.environ["CLOUDINARY_CLOUD_NAME"]
-CLOUDINARY_KEY      = os.environ["CLOUDINARY_API_KEY"]
-CLOUDINARY_SECRET   = os.environ["CLOUDINARY_API_SECRET"]
+OPENAI_API_KEY     = os.environ["OPENAI_API_KEY"]
+CLOUDINARY_CLOUD   = os.environ["CLOUDINARY_CLOUD_NAME"]
+CLOUDINARY_KEY     = os.environ["CLOUDINARY_API_KEY"]
+CLOUDINARY_SECRET  = os.environ["CLOUDINARY_API_SECRET"]
+WIX_SITE_ID        = os.environ["WIX_SITE_ID"]
+WIX_API_KEY        = os.environ["WIX_API_KEY"]
+IG_USER_ID         = os.environ["IG_USER_ID"]
+IG_TOKEN           = os.environ["IG_TOKEN"]
+FB_PAGE_ID         = os.environ["FB_PAGE_ID"]
+FB_PAGE_TOKEN      = os.environ["FB_PAGE_TOKEN"]
 
-WIX_SITE_ID         = os.environ["WIX_SITE_ID"]
-WIX_API_KEY         = os.environ["WIX_API_KEY"]
-
-IG_USER_ID          = os.environ["IG_USER_ID"]
-IG_TOKEN            = os.environ["IG_TOKEN"]
-
-FB_PAGE_ID          = os.environ["FB_PAGE_ID"]
-FB_PAGE_TOKEN       = os.environ["FB_PAGE_TOKEN"]
-
-TOPICS_FILE         = "topics.csv"
-PROMPT_FILE         = "config/prompt.md"
+TOPICS_FILE        = "topics.csv"
+PROMPT_FILE        = "config/prompt.md"
 
 # ============================================================
-# STEP 1: Pick next topic from topics.csv
+# HELPERS
+# ============================================================
+
+def check_response(response, step_name):
+    """Raises exception with clear message if response is not 2xx."""
+    if response.status_code not in (200, 201):
+        raise Exception(
+            f"[{step_name}] FAILED — HTTP {response.status_code}\n"
+            f"Response: {response.text[:500]}"
+        )
+    return response.json()
+
+# ============================================================
+# STEP 1: Pick next topic
 # ============================================================
 
 def get_next_topic():
@@ -49,7 +65,8 @@ def get_next_topic():
             rows.append(row)
 
     for i, row in enumerate(rows):
-        if row.get("Status", "").strip().lower() in ("ready", ""):
+        status = row.get("Status", "").strip().lower()
+        if status in ("ready", ""):
             print(f"[TOPIC] Selected: {row['Topic / Working Title']}")
             return i, rows, row
 
@@ -59,16 +76,17 @@ def mark_topic_published(index, rows, post_url):
     rows[index]["Status"] = "Published"
     rows[index]["Website Published URL"] = post_url
     rows[index]["Publish Status Code"] = "200"
+    rows[index]["Workflow Status"] = "Complete"
 
     fieldnames = list(rows[0].keys())
     with open(TOPICS_FILE, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"[TOPICS] Marked as Published")
+    print(f"[TOPICS] Status updated to Published")
 
 # ============================================================
-# STEP 2: Generate article, Instagram post via GPT
+# STEP 2: Generate article content via GPT
 # ============================================================
 
 def load_prompt():
@@ -79,19 +97,17 @@ def generate_content(topic_row):
     client = OpenAI(api_key=OPENAI_API_KEY)
     base_prompt = load_prompt()
 
-    user_message = f"""
-Topic: {topic_row['Topic / Working Title']}
-Core observation: {topic_row['Core Observation']}
-Audience question: {topic_row['Audience Question']}
-Content pillar: {topic_row['Content Pillar']}
-"""
-
-    full_prompt = base_prompt + "\n\n" + user_message
+    user_message = (
+        f"Topic: {topic_row['Topic / Working Title']}\n"
+        f"Core observation: {topic_row['Core Observation']}\n"
+        f"Audience question: {topic_row['Audience Question']}\n"
+        f"Content pillar: {topic_row['Content Pillar']}\n"
+    )
 
     print("[GPT] Generating article content...")
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages=[{"role": "user", "content": full_prompt}],
+        messages=[{"role": "user", "content": base_prompt + "\n\n" + user_message}],
         max_tokens=2000,
         temperature=0.7
     )
@@ -101,20 +117,23 @@ Content pillar: {topic_row['Content Pillar']}
     return parse_content(raw)
 
 def parse_content(raw_text):
-    sections = {}
-
     patterns = {
         "title":     r"===TITLE===\s*(.*?)(?====|\Z)",
         "instagram": r"===INSTAGRAM===\s*(.*?)(?====|\Z)",
         "website":   r"===WEBSITE===\s*(.*?)(?====|\Z)",
         "geo":       r"===GEO===\s*(.*?)(?====|\Z)",
     }
-
+    sections = {}
     for key, pattern in patterns.items():
         match = re.search(pattern, raw_text, re.DOTALL)
         sections[key] = match.group(1).strip() if match else ""
 
-    print(f"[PARSE] Title: {sections.get('title', 'N/A')}")
+    if not sections.get("title"):
+        raise Exception("[PARSE] Title is empty — content generation may have failed")
+    if not sections.get("website"):
+        raise Exception("[PARSE] Website article is empty — content generation may have failed")
+
+    print(f"[PARSE] Title: {sections['title']}")
     return sections
 
 # ============================================================
@@ -124,18 +143,17 @@ def parse_content(raw_text):
 def generate_image(title, core_observation):
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    image_prompt = f"""
-Create a calm, minimal, atmospheric photograph-style image for a reflective article titled "{title}".
-
-Style requirements:
-- Warm coffee tones, soft blues, muted beige and cream palette
-- Soft natural light, shadows, minimal composition
-- Abstract or still life: books, stones, ceramics, plants, soft textures
-- NO people, NO text, NO logos
-- The mood should feel: quiet, precise, human, thoughtful
-- Similar to high-end editorial photography for a mindfulness or philosophy publication
-- Aspect ratio: square (1:1)
-"""
+    image_prompt = (
+        f'Create a calm, minimal, atmospheric photograph-style image '
+        f'for a reflective article titled "{title}". '
+        f'Style: warm coffee tones, soft blues, muted beige and cream palette. '
+        f'Soft natural light, shadows, minimal composition. '
+        f'Abstract or still life: books, stones, ceramics, plants, soft textures. '
+        f'NO people, NO text, NO logos. '
+        f'Mood: quiet, precise, human, thoughtful. '
+        f'Similar to high-end editorial photography for a mindfulness publication. '
+        f'Square format (1:1).'
+    )
 
     print("[GPT-IMAGE] Generating image...")
     response = client.images.generate(
@@ -145,16 +163,17 @@ Style requirements:
         n=1
     )
 
-    # gpt-image-1 returns base64
     image_data = response.data[0].b64_json
+    if not image_data:
+        raise Exception("[GPT-IMAGE] No image data returned")
+
     image_bytes = base64.b64decode(image_data)
 
-    # Save to temp file
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp.write(image_bytes)
         tmp_path = tmp.name
 
-    print(f"[GPT-IMAGE] Image saved to: {tmp_path}")
+    print(f"[GPT-IMAGE] Image saved: {tmp_path}")
     return tmp_path
 
 # ============================================================
@@ -168,9 +187,10 @@ def upload_to_cloudinary(image_path, title):
         api_secret=CLOUDINARY_SECRET
     )
 
-    public_id = f"CL_master/CL_{title.replace(' ', '_')[:50]}"
+    safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', title)[:50]
+    public_id = f"CL_master/CL_{safe_title}"
 
-    print(f"[CLOUDINARY] Uploading image...")
+    print("[CLOUDINARY] Uploading image...")
     result = cloudinary.uploader.upload(
         image_path,
         public_id=public_id,
@@ -178,32 +198,26 @@ def upload_to_cloudinary(image_path, title):
         resource_type="image"
     )
 
-    secure_url = result["secure_url"]
-    print(f"[CLOUDINARY] Uploaded: {secure_url[:60]}...")
+    secure_url = result.get("secure_url")
+    if not secure_url:
+        raise Exception("[CLOUDINARY] Upload succeeded but no URL returned")
+
+    print(f"[CLOUDINARY] Uploaded: {secure_url[:70]}...")
     return secure_url
 
 # ============================================================
-# STEP 5: Publish article to Wix Blog
+# STEP 5: Upload image to Wix Media
 # ============================================================
 
-def convert_html_to_ricos(html_content, wix_headers):
-    response = requests.post(
-        "https://www.wixapis.com/ricos/v1/ricos-document/convert/to-ricos",
-        headers=wix_headers,
-        json={"html": html_content}
-    )
-    if response.status_code != 200:
-        raise Exception(f"Ricos conversion failed: {response.text}")
-    return response.json().get("document")
+def upload_image_to_wix(cloudinary_url, wix_headers):
+    """
+    Downloads image from Cloudinary and uploads to Wix Media.
+    Returns Wix media URL for use in blog post coverMedia.
+    Falls back to Cloudinary URL if upload fails.
+    """
+    print("[WIX MEDIA] Uploading image to Wix Media...")
 
-def text_to_html(text):
-    paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
-    return "".join(f"<p>{p}</p>" for p in paragraphs)
-    
-def upload_image_to_wix(image_url, wix_headers):
-    print("[WIX] Uploading image to Wix Media...")
-    
-    # Step 1: Get upload URL
+    # Step 5a: Get upload URL from Wix
     upload_url_response = requests.post(
         "https://www.wixapis.com/site-media/v1/files/generate-upload-url",
         headers=wix_headers,
@@ -212,94 +226,135 @@ def upload_image_to_wix(image_url, wix_headers):
             "fileName": "clarity-lab-cover.png"
         }
     )
-    
+
     if upload_url_response.status_code not in (200, 201):
-        print(f"[WIX] Could not get upload URL: {upload_url_response.text}")
-        return image_url  # fallback to Cloudinary URL
-    
+        print(f"[WIX MEDIA] Could not get upload URL (HTTP {upload_url_response.status_code}), using Cloudinary URL")
+        return cloudinary_url
+
     upload_data = upload_url_response.json()
     wix_upload_url = upload_data.get("uploadUrl")
-    
+    upload_token = upload_data.get("uploadToken")
+
     if not wix_upload_url:
-        print("[WIX] No upload URL returned, using Cloudinary URL")
-        return image_url
-    
-    # Step 2: Download image from Cloudinary
-    img_response = requests.get(image_url)
+        print("[WIX MEDIA] No upload URL in response, using Cloudinary URL")
+        return cloudinary_url
+
+    # Step 5b: Download image from Cloudinary
+    img_response = requests.get(cloudinary_url)
     if img_response.status_code != 200:
-        print("[WIX] Could not download image from Cloudinary")
-        return image_url
-    
-    # Step 3: Upload to Wix
+        print(f"[WIX MEDIA] Could not download image from Cloudinary (HTTP {img_response.status_code})")
+        return cloudinary_url
+
+    # Step 5c: Upload to Wix
     upload_response = requests.put(
         wix_upload_url,
         data=img_response.content,
         headers={"Content-Type": "image/png"}
     )
-    
+
     if upload_response.status_code not in (200, 201):
-        print(f"[WIX] Upload failed: {upload_response.text}")
-        return image_url
-    
-    wix_image_url = upload_response.json().get("file", {}).get("url", image_url)
-    print(f"[WIX] Image uploaded to Wix: {wix_image_url[:60]}...")
-    return wix_image_url
-    
-def publish_to_wix(title, website_text, image_url):
+        print(f"[WIX MEDIA] Upload failed (HTTP {upload_response.status_code}), using Cloudinary URL")
+        return cloudinary_url
+
+    upload_result = upload_response.json()
+    wix_file = upload_result.get("file", {})
+    wix_url = wix_file.get("url") or wix_file.get("fileUrl")
+
+    if not wix_url:
+        print("[WIX MEDIA] No file URL in response, using Cloudinary URL")
+        return cloudinary_url
+
+    print(f"[WIX MEDIA] Uploaded successfully: {wix_url[:70]}...")
+    return wix_url
+
+# ============================================================
+# STEP 6: Publish article to Wix Blog
+# ============================================================
+
+def text_to_html(text):
+    paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
+    return "".join(f"<p>{p}</p>" for p in paragraphs)
+
+def convert_html_to_ricos(html_content, wix_headers):
+    print("[WIX] Converting HTML to Ricos format...")
+    response = requests.post(
+        "https://www.wixapis.com/ricos/v1/ricos-document/convert/to-ricos",
+        headers=wix_headers,
+        json={"html": html_content}
+    )
+    data = check_response(response, "WIX RICOS")
+    rich_content = data.get("document")
+    if not rich_content:
+        raise Exception("[WIX RICOS] No document in response")
+    return rich_content
+
+def publish_to_wix(title, website_text, cloudinary_url):
     wix_headers = {
         "Authorization": WIX_API_KEY,
         "wix-site-id": WIX_SITE_ID,
         "Content-Type": "application/json"
     }
 
+    # Upload image to Wix Media
+    cover_image_url = upload_image_to_wix(cloudinary_url, wix_headers)
+
+    # Convert text to Ricos
     html_content = text_to_html(website_text)
     rich_content = convert_html_to_ricos(html_content, wix_headers)
 
-    excerpt = website_text[:200].strip() + "..."
+    excerpt = " ".join(website_text.split()[:40]) + "..."
 
-    draft_body = {
-        "draftPost": {
-            "title": title,
-            "excerpt": excerpt,
-            "richContent": rich_content,
-            "coverMedia": {
-                "image": {"url": image_url}
-            },
-            "featured": False,
-            "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"],
-            "memberId": "4d7e0085-753e-4aee-b7c6-ed66431fd9c6"
-        }
-    }
-
+    # Create draft
     print("[WIX] Creating draft post...")
     draft_response = requests.post(
         "https://www.wixapis.com/blog/v3/draft-posts",
         headers=wix_headers,
-        json=draft_body
+        json={
+            "draftPost": {
+                "title": title,
+                "excerpt": excerpt,
+                "richContent": rich_content,
+                "coverMedia": {
+                    "image": {"url": cover_image_url}
+                },
+                "featured": False,
+                "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"],
+                "memberId": "4d7e0085-753e-4aee-b7c6-ed66431fd9c6"
+            }
+        }
     )
+    draft_data = check_response(draft_response, "WIX CREATE DRAFT")
 
-    if draft_response.status_code not in (200, 201):
-        raise Exception(f"Wix draft creation failed: {draft_response.text}")
-
-    draft_id = draft_response.json()["draftPost"]["id"]
+    draft_id = draft_data.get("draftPost", {}).get("id")
+    if not draft_id:
+        raise Exception(f"[WIX] No draft ID in response: {draft_data}")
     print(f"[WIX] Draft created: {draft_id}")
 
+    # Verify draft exists before publishing
+    print("[WIX] Verifying draft...")
+    verify_response = requests.get(
+        f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}",
+        headers=wix_headers
+    )
+    check_response(verify_response, "WIX VERIFY DRAFT")
+    print("[WIX] Draft verified OK")
+
+    # Publish
     print("[WIX] Publishing post...")
     publish_response = requests.post(
         f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}/publish",
         headers=wix_headers
     )
+    publish_data = check_response(publish_response, "WIX PUBLISH")
 
-    if publish_response.status_code not in (200, 201):
-        raise Exception(f"Wix publish failed: {publish_response.text}")
-
-    post_id = publish_response.json().get("postId", draft_id)
-    post_url = f"https://www.inneros.online/post/{title.lower().replace(' ', '-')}"
+    post_id = publish_data.get("postId", draft_id)
+    slug = re.sub(r'[^a-z0-9\-]', '-', title.lower()).strip('-')
+    post_url = f"https://www.inneros.online/post/{slug}"
     print(f"[WIX] Published: {post_url}")
     return post_url
 
 # ============================================================
-# STEP 6: Publish to Instagram
+# STEP 7: Publish to Instagram
 # ============================================================
 
 def publish_to_instagram(caption, image_url):
@@ -314,13 +369,15 @@ def publish_to_instagram(caption, image_url):
     )
     container = container_response.json()
 
+    if "error" in container:
+        raise Exception(f"[INSTAGRAM] Container error: {container['error']['message']}")
     if "id" not in container:
-        raise Exception(f"Instagram container error: {container}")
+        raise Exception(f"[INSTAGRAM] Unexpected response: {container}")
 
     container_id = container["id"]
+    print(f"[INSTAGRAM] Container created: {container_id}, waiting 5s...")
     time.sleep(5)
 
-    print("[INSTAGRAM] Publishing...")
     publish_response = requests.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media_publish",
         data={
@@ -330,14 +387,16 @@ def publish_to_instagram(caption, image_url):
     )
     result = publish_response.json()
 
+    if "error" in result:
+        raise Exception(f"[INSTAGRAM] Publish error: {result['error']['message']}")
     if "id" not in result:
-        raise Exception(f"Instagram publish error: {result}")
+        raise Exception(f"[INSTAGRAM] Unexpected response: {result}")
 
     print(f"[INSTAGRAM] Published: {result['id']}")
     return result["id"]
 
 # ============================================================
-# STEP 7: Publish to Facebook
+# STEP 8: Publish to Facebook
 # ============================================================
 
 def publish_to_facebook(message, image_url):
@@ -352,8 +411,10 @@ def publish_to_facebook(message, image_url):
     )
     result = response.json()
 
+    if "error" in result:
+        raise Exception(f"[FACEBOOK] Error: {result['error']['message']}")
     if "id" not in result:
-        raise Exception(f"Facebook publish error: {result}")
+        raise Exception(f"[FACEBOOK] Unexpected response: {result}")
 
     print(f"[FACEBOOK] Published: {result['id']}")
     return result["id"]
@@ -361,13 +422,6 @@ def publish_to_facebook(message, image_url):
 # ============================================================
 # MAIN PIPELINE
 # ============================================================
-
-def build_ig_caption(instagram_text, article_url):
-    hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
-    return f"{instagram_text}\n\nRead the full article → link in bio\n\n{hashtags}"
-
-def build_fb_message(instagram_text, article_url):
-    return f"{instagram_text}\n\nRead the full article → {article_url}"
 
 def run_pipeline():
     print(f"\n{'='*60}")
@@ -379,33 +433,35 @@ def run_pipeline():
 
     # Step 2: Generate content
     content = generate_content(topic)
-    title       = content["title"]
-    ig_text     = content["instagram"]
-    website     = content["website"]
+    title   = content["title"]
+    ig_text = content["instagram"]
+    website = content["website"]
 
     # Step 3: Generate image
     image_path = generate_image(title, topic["Core Observation"])
 
     # Step 4: Upload to Cloudinary
-    image_url = upload_to_cloudinary(image_path, title)
+    cloudinary_url = upload_to_cloudinary(image_path, title)
 
-    # Step 5: Publish to Wix
-    post_url = publish_to_wix(title, website, image_url)
+    # Step 5-6: Publish to Wix (includes Wix Media upload)
+    post_url = publish_to_wix(title, website, cloudinary_url)
 
-    # Step 6: Publish to Instagram
-    ig_caption = build_ig_caption(ig_text, post_url)
-    publish_to_instagram(ig_caption, image_url)
+    # Step 7: Publish to Instagram
+    hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
+    ig_caption = f"{ig_text}\n\nRead the full article → link in bio\n\n{hashtags}"
+    publish_to_instagram(ig_caption, cloudinary_url)
 
-    # Step 7: Publish to Facebook
-    fb_message = build_fb_message(ig_text, post_url)
-    publish_to_facebook(fb_message, image_url)
+    # Step 8: Publish to Facebook
+    fb_message = f"{ig_text}\n\nRead the full article → {post_url}"
+    publish_to_facebook(fb_message, cloudinary_url)
 
-    # Step 8: Mark as published
+    # Step 9: Mark topic as published
     mark_topic_published(index, rows, post_url)
 
     print(f"\n{'='*60}")
-    print(f"Pipeline complete: {title}")
-    print(f"Article: {post_url}")
+    print(f"✅ Pipeline complete!")
+    print(f"   Title:   {title}")
+    print(f"   Article: {post_url}")
     print(f"{'='*60}\n")
 
 if __name__ == "__main__":
