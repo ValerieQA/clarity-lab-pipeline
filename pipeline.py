@@ -1,13 +1,15 @@
 """
-Clarity Lab — Automated Content Pipeline v12
+Clarity Lab — Automated Content Pipeline v13
 
-Final visual fixes:
+Updates:
 - One master image for Website, Instagram, Facebook
 - No people at all
 - No GPT-generated logos, symbols, circles, letters, monograms, or text
 - Real logo added only via Pillow
-- Light luxury editorial style with elegant contrast and deeper shadows
-- Instagram text added via Pillow in lower center
+- Logo moved lower and slightly closer to center
+- Image prompt no longer hardcodes object lists
+- Instagram text added via Pillow, centered symmetrically in lower third
+- Instagram text is shorter, narrower, and more editorial
 """
 
 import os
@@ -97,11 +99,6 @@ def text_to_html(text):
     paragraphs = [p.strip() for p in text.strip().split("\n\n") if p.strip()]
     return "".join(f"<p>{p}</p>" for p in paragraphs)
 
-def get_image_brightness(img):
-    gray = img.convert("L")
-    arr = np.array(gray)
-    return float(arr.mean())
-
 def get_region_brightness(img, box):
     region = img.crop(box).convert("L")
     arr = np.array(region)
@@ -161,11 +158,11 @@ def get_instagram_phrase(ig_text, title):
     lines = [line.strip() for line in clean.split("\n") if line.strip()]
 
     for line in lines:
-        if "Read the full reflection" not in line and len(line) <= 115:
+        if "Read the full reflection" not in line and 20 <= len(line) <= 80:
             return line
 
     words = clean.split()
-    phrase = " ".join(words[:14]) if words else title
+    phrase = " ".join(words[:10]) if words else title
     return phrase.strip()
 
 # ============================================================
@@ -296,12 +293,31 @@ Optional accent:
 The palette influences mood and color treatment, but should not dictate the subject matter.
 Favor semantic relevance over decorative consistency.
 
+Visual language:
+quiet,
+contemplative,
+editorial,
+luxury,
+reflective,
+timeless,
+minimal,
+architectural,
+symbolic,
+spacious.
+
+Scene rule:
+The scene should be topic-driven.
+Objects, environments, materials, and symbols should emerge naturally from the article theme.
+Favor atmosphere over objects.
+Favor meaning over literal illustration.
+Favor space over decoration.
+
 Luxury editorial direction:
-Think quiet luxury, refined interiors, timeless editorial photography, natural materials, architectural calm, textured surfaces, soft fabric, stone, paper, glass, water, air, shadow, and light.
-The image should feel expensive, quiet, minimal, and human without showing humans.
+Think quiet luxury, refined visual rhythm, timeless editorial photography, natural materials, architectural calm, textured surfaces, air, shadow, and light.
+The image should feel expensive, quiet, minimal, intelligent, and spacious.
 Avoid generic lifestyle imagery.
 Avoid social media template aesthetics.
-Avoid overly sentimental scenes.
+Avoid sentimental scenes.
 Avoid motivational poster style.
 
 Light and contrast:
@@ -342,8 +358,6 @@ Avoid literal illustration.
 Do not show obvious symbols like brains, lightbulbs, icons, charts, arrows, or motivational graphics.
 Express the idea indirectly through atmosphere, composition, symbolism, light, space, materials, nature, architecture, water, interiors, landscapes, movement, or stillness.
 
-Objects and environments should emerge naturally from the reflection.
-Do not repeat the same books, stones, cups, ceramics, and plants by default.
 Avoid repeating visual compositions from recent posts.
 The feed should feel like one evolving visual conversation.
 
@@ -403,10 +417,10 @@ def overlay_logo(image_path):
     W, H = img.size
 
     logo_area = (
-        int(W * 0.04),
-        int(H * 0.04),
-        int(W * 0.32),
-        int(H * 0.22)
+        int(W * 0.08),
+        int(H * 0.07),
+        int(W * 0.36),
+        int(H * 0.26)
     )
     local_brightness = get_region_brightness(img, logo_area)
 
@@ -416,13 +430,13 @@ def overlay_logo(image_path):
 
     try:
         logo = Image.open(logo_path).convert("RGBA")
-        logo_w = int(W * 0.18)
+        logo_w = int(W * 0.17)
         logo_ratio = logo.height / logo.width
         logo_h = int(logo_w * logo_ratio)
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
 
-        logo_x = int(W * 0.055)
-        logo_y = int(H * 0.055)
+        logo_x = int(W * 0.085)
+        logo_y = int(H * 0.080)
 
         overlay.paste(logo, (logo_x, logo_y), logo)
         print(f"[PILLOW] Logo placed — local brightness: {local_brightness:.0f}")
@@ -449,22 +463,20 @@ def overlay_instagram_editorial(image_path, title, ig_text):
     W, H = img.size
 
     logo_area = (
-        int(W * 0.04),
-        int(H * 0.04),
-        int(W * 0.32),
-        int(H * 0.22)
+        int(W * 0.08),
+        int(H * 0.07),
+        int(W * 0.36),
+        int(H * 0.26)
     )
     local_brightness = get_region_brightness(img, logo_area)
-
     logo_path = LOGO_DARK if local_brightness > 135 else LOGO_WHITE
 
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
 
-    # Soft lower-third veil for readability.
-    # Not a hard box; just a subtle editorial gradient-like layer.
-    for y in range(int(H * 0.56), H):
-        alpha = int(58 * ((y - int(H * 0.56)) / (H - int(H * 0.56))))
+    # Soft lower-third veil for readability, not a hard box.
+    for y in range(int(H * 0.58), H):
+        alpha = int(45 * ((y - int(H * 0.58)) / (H - int(H * 0.58))))
         draw.line((0, y, W, y), fill=(255, 248, 238, alpha))
 
     try:
@@ -474,8 +486,8 @@ def overlay_instagram_editorial(image_path, title, ig_text):
         logo_h = int(logo_w * logo_ratio)
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
 
-        logo_x = int(W * 0.055)
-        logo_y = int(H * 0.055)
+        logo_x = int(W * 0.085)
+        logo_y = int(H * 0.080)
 
         overlay.paste(logo, (logo_x, logo_y), logo)
     except Exception as e:
@@ -485,33 +497,33 @@ def overlay_instagram_editorial(image_path, title, ig_text):
 
     phrase = get_instagram_phrase(ig_text, title)
 
-    phrase_font = get_font(38, serif=True)
-    small_font = get_font(15, serif=False)
+    phrase_font = get_font(34, serif=True)
+    small_font = get_font(14, serif=False)
 
     center_x = W / 2
-    max_width = int(W * 0.76)
+    max_width = int(W * 0.62)
 
     phrase_lines = wrap_text_by_width(draw, phrase, phrase_font, max_width)
-    phrase_lines = phrase_lines[:3]
+    phrase_lines = phrase_lines[:2]
 
-    total_text_height = 0
+    line_heights = []
     for line in phrase_lines:
         bbox = draw.textbbox((0, 0), line, font=phrase_font)
-        total_text_height += (bbox[3] - bbox[1]) + 10
+        line_heights.append(bbox[3] - bbox[1])
 
-    start_y = int(H * 0.68)
-    if len(phrase_lines) >= 3:
-        start_y = int(H * 0.62)
+    total_height = sum(line_heights) + max(0, len(phrase_lines) - 1) * 10
 
-    text_color = (35, 41, 42, 235)
-    small_color = (65, 70, 70, 195)
+    text_block_center_y = int(H * 0.745)
+    start_y = int(text_block_center_y - total_height / 2)
 
-    y = start_y
-    y = draw_centered_lines(
+    text_color = (34, 40, 41, 235)
+    small_color = (64, 69, 69, 190)
+
+    draw_centered_lines(
         draw=draw,
         lines=phrase_lines,
         center_x=center_x,
-        y=y,
+        y=start_y,
         font=phrase_font,
         fill=text_color,
         line_gap=10
@@ -521,7 +533,7 @@ def overlay_instagram_editorial(image_path, title, ig_text):
     bbox = draw.textbbox((0, 0), bottom, font=small_font)
     bottom_w = bbox[2] - bbox[0]
     draw.text(
-        (center_x - bottom_w / 2, int(H * 0.90)),
+        (center_x - bottom_w / 2, int(H * 0.89)),
         bottom,
         font=small_font,
         fill=small_color
@@ -781,7 +793,7 @@ def publish_to_facebook(message, image_url):
 
 def run_pipeline():
     print(f"\n{'='*60}")
-    print(f"Clarity Lab Pipeline v12 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"Clarity Lab Pipeline v13 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
     index, rows, topic = get_next_topic()
