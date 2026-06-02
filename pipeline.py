@@ -739,9 +739,38 @@ def publish_to_instagram(caption, image_url):
         raise Exception(f"[INSTAGRAM] Unexpected: {container}")
 
     container_id = container["id"]
+    print(f"[INSTAGRAM] Container created: {container_id}")
 
-    print(f"[INSTAGRAM] Container: {container_id}, waiting 5s...")
-    time.sleep(5)
+    # Wait until Instagram finishes processing the image
+    for attempt in range(1, 11):
+        print(f"[INSTAGRAM] Checking container status... attempt {attempt}/10")
+
+        status_response = requests.get(
+            f"https://graph.facebook.com/v19.0/{container_id}",
+            params={
+                "fields": "status_code,status",
+                "access_token": IG_TOKEN
+            }
+        )
+
+        status_data = status_response.json()
+        print(f"[INSTAGRAM] Status: {status_data}")
+
+        status_code = status_data.get("status_code")
+
+        if status_code == "FINISHED":
+            print("[INSTAGRAM] Media ready.")
+            break
+
+        if status_code == "ERROR":
+            raise Exception(f"[INSTAGRAM] Media processing error: {status_data}")
+
+        time.sleep(10)
+
+    else:
+        raise Exception("[INSTAGRAM] Media was not ready after waiting")
+
+    print("[INSTAGRAM] Publishing...")
 
     publish_response = requests.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media_publish",
