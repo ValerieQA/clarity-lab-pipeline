@@ -1,6 +1,10 @@
 """
-Clarity Lab — Automated Content Pipeline v5
-Adds: Pillow image overlay (logo + quote text) on generated photo
+Clarity Lab — Automated Content Pipeline v7 (Final)
+Fixes:
+- media.displayed = True for Wix cover image
+- heroImage with correct Wix file ID
+- Logo only overlay (no text) via Pillow
+- All status checks
 """
 
 import os
@@ -9,11 +13,10 @@ import re
 import time
 import base64
 import tempfile
-import textwrap
 import requests
 from datetime import datetime
 from openai import OpenAI
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image
 import numpy as np
 import cloudinary
 import cloudinary.uploader
@@ -37,11 +40,6 @@ TOPICS_FILE        = "topics.csv"
 PROMPT_FILE        = "config/prompt.md"
 LOGO_DARK          = "config/logo_dark.png"
 LOGO_WHITE         = "config/logo_white.png"
-
-# Brand colors
-COLOR_DARK         = (31, 31, 31)      # #1F1F1F
-COLOR_LIGHT        = (244, 241, 236)   # #F4F1EC
-COLOR_SAGE         = (168, 173, 160)   # #A8ADA0
 
 # ============================================================
 # HELPERS
@@ -68,20 +66,9 @@ def text_to_html(text):
     return "".join(f"<p>{p}</p>" for p in paragraphs)
 
 def get_image_brightness(img):
-    """Returns average brightness 0-255 of the image."""
     gray = img.convert("L")
     arr = np.array(gray)
     return float(arr.mean())
-
-def extract_quote(instagram_text):
-    """Extract a short punchy quote from Instagram text for image overlay."""
-    lines = [l.strip() for l in instagram_text.strip().split("\n") if l.strip()]
-    # Find shortest meaningful line (not too short, not too long)
-    candidates = [l for l in lines if 20 < len(l) < 80]
-    if candidates:
-        return candidates[0]
-    # Fallback: first line truncated
-    return lines[0][:70] if lines else ""
 
 # ============================================================
 # STEP 1: Pick next topic
@@ -167,7 +154,7 @@ def parse_content(raw_text):
     return sections
 
 # ============================================================
-# STEP 3: Generate base image via gpt-image-1
+# STEP 3: Generate image via gpt-image-1
 # ============================================================
 
 def generate_image(title, core_observation):
@@ -185,7 +172,7 @@ def generate_image(title, core_observation):
         f'Square format.'
     )
 
-    print("[GPT-IMAGE] Generating base image...")
+    print("[GPT-IMAGE] Generating image...")
     response = client.images.generate(
         model="gpt-image-1",
         prompt=image_prompt,
@@ -203,128 +190,43 @@ def generate_image(title, core_observation):
         tmp.write(image_bytes)
         tmp_path = tmp.name
 
-    print(f"[GPT-IMAGE] Base image saved: {tmp_path}")
+    print(f"[GPT-IMAGE] Image saved: {tmp_path}")
     return tmp_path
 
 # ============================================================
-# STEP 4: Overlay logo + text on image (Pillow)
+# STEP 4: Overlay logo only (no text) via Pillow
 # ============================================================
 
-def overlay_branding(image_path, title, instagram_text):
-    """
-    Overlays Clarity Lab branding on the photo:
-    - Logo in top-left corner
-    - Short quote in center
-    - "REFLECTIONS ON THE SITE." at bottom
-    Returns path to branded image.
-    """
-    print("[PILLOW] Overlaying branding...")
+def overlay_logo(image_path):
+    """Overlay Clarity Lab logo in top-left corner only. No text."""
+    print("[PILLOW] Overlaying logo...")
 
     img = Image.open(image_path).convert("RGBA")
-    W, H = img.size  # 1024x1024
+    W, H = img.size
 
-    # Determine brightness and choose logo/text color
     brightness = get_image_brightness(img)
     is_dark = brightness < 128
     logo_path = LOGO_WHITE if is_dark else LOGO_DARK
-    text_color = COLOR_LIGHT if is_dark else COLOR_DARK
-    subtle_color = (*COLOR_SAGE, 200)  # sage with alpha
 
-    # Create overlay layer
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
 
-    # --- LOGO (top-left) ---
     try:
         logo = Image.open(logo_path).convert("RGBA")
-        logo_w = int(W * 0.28)  # 28% of image width
+        logo_w = int(W * 0.30)
         logo_ratio = logo.height / logo.width
         logo_h = int(logo_w * logo_ratio)
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
         logo_x = int(W * 0.06)
         logo_y = int(H * 0.06)
         overlay.paste(logo, (logo_x, logo_y), logo)
-        print(f"[PILLOW] Logo placed at ({logo_x}, {logo_y}), size {logo_w}x{logo_h}")
+        print(f"[PILLOW] Logo placed — brightness: {brightness:.0f}, using {'white' if is_dark else 'dark'} logo")
     except Exception as e:
         print(f"[PILLOW] Logo error: {e}")
 
-    # --- QUOTE TEXT (center) ---
-    quote = title
-    if quote:
-        try:
-            # Try system fonts in order
-            font = None
-            font_size = int(W * 0.043)
-            for font_name in [
-                "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
-                "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
-                "/usr/share/fonts/truetype/freefont/FreeSerif.ttf",
-            ]:
-                try:
-                    font = ImageFont.truetype(font_name, font_size)
-                    break
-                except:
-                    continue
-            if font is None:
-                font = ImageFont.load_default()
-
-            # Wrap text
-            max_chars = 26
-            wrapped = textwrap.fill(quote, width=max_chars)
-            lines = wrapped.split("\n")
-
-            # Calculate total text block height
-            line_height = int(font_size * 1.4)
-            total_h = len(lines) * line_height
-
-            # Draw each line centered
-            start_y = (H - total_h) // 2
-            for i, line in enumerate(lines):
-                bbox = draw.textbbox((0, 0), line, font=font)
-                line_w = bbox[2] - bbox[0]
-                x = (W - line_w) // 2
-                y = start_y + i * line_height
-
-                # Subtle shadow for readability
-                shadow_color = (0, 0, 0, 60) if not is_dark else (255, 255, 255, 30)
-                draw.text((x+2, y+2), line, font=font, fill=shadow_color)
-                draw.text((x, y), line, font=font, fill=(*text_color, 230))
-
-            print(f"[PILLOW] Quote placed: {quote[:40]}...")
-        except Exception as e:
-            print(f"[PILLOW] Quote text error: {e}")
-
-    # --- BOTTOM TEXT ---
-    try:
-        small_size = int(W * 0.025)
-        small_font = None
-        for font_name in [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        ]:
-            try:
-                small_font = ImageFont.truetype(font_name, small_size)
-                break
-            except:
-                continue
-        if small_font is None:
-            small_font = ImageFont.load_default()
-
-        bottom_text = "MORE REFLECTIONS LIVE ON THE SITE."
-        bbox = draw.textbbox((0, 0), bottom_text, font=small_font)
-        bw = bbox[2] - bbox[0]
-        bx = (W - bw) // 2
-        by = int(H * 0.88)
-        draw.text((bx, by), bottom_text, font=small_font, fill=(*text_color, 160))
-    except Exception as e:
-        print(f"[PILLOW] Bottom text error: {e}")
-
-    # Composite overlay onto image
-    result = Image.alpha_composite(img, overlay)
-    result_rgb = result.convert("RGB")
+    result = Image.alpha_composite(img, overlay).convert("RGB")
 
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-        result_rgb.save(tmp.name, "JPEG", quality=95)
+        result.save(tmp.name, "JPEG", quality=95)
         branded_path = tmp.name
 
     print(f"[PILLOW] Branded image saved: {branded_path}")
@@ -344,7 +246,7 @@ def upload_to_cloudinary(image_path, title):
     safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', title)[:50]
     public_id = f"CL_master/CL_{safe_title}"
 
-    print("[CLOUDINARY] Uploading branded image...")
+    print("[CLOUDINARY] Uploading image...")
     result = cloudinary.uploader.upload(
         image_path,
         public_id=public_id,
@@ -360,7 +262,7 @@ def upload_to_cloudinary(image_path, title):
     return secure_url
 
 # ============================================================
-# STEP 6: Import image to Wix Media
+# STEP 6: Import image to Wix Media — get file ID
 # ============================================================
 
 def import_image_to_wix(cloudinary_url, title, wix_headers):
@@ -379,15 +281,19 @@ def import_image_to_wix(cloudinary_url, title, wix_headers):
     )
 
     if response.status_code not in (200, 201):
-        print(f"[WIX MEDIA] Import failed (HTTP {response.status_code}), using Cloudinary URL")
+        print(f"[WIX MEDIA] Import failed (HTTP {response.status_code}): {response.text[:200]}")
         return None, cloudinary_url
 
     data = response.json()
     file_info = data.get("file", {})
     wix_file_id = file_info.get("id") or file_info.get("fileId")
-    wix_url = file_info.get("url") or file_info.get("fileUrl") or cloudinary_url
+    wix_url = file_info.get("url") or cloudinary_url
 
-    print(f"[WIX MEDIA] Imported. File ID: {wix_file_id}")
+    if wix_file_id:
+        print(f"[WIX MEDIA] File ID: {wix_file_id}")
+    else:
+        print(f"[WIX MEDIA] No file ID, using Cloudinary URL")
+
     return wix_file_id, wix_url
 
 # ============================================================
@@ -395,7 +301,7 @@ def import_image_to_wix(cloudinary_url, title, wix_headers):
 # ============================================================
 
 def convert_html_to_ricos(html_content, wix_headers):
-    print("[WIX] Converting content to Ricos...")
+    print("[WIX] Converting to Ricos...")
     response = requests.post(
         "https://www.wixapis.com/ricos/v1/ricos-document/convert/to-ricos",
         headers=wix_headers,
@@ -414,16 +320,22 @@ def publish_to_wix(title, website_text, cloudinary_url):
         "Content-Type": "application/json"
     }
 
-    wix_file_id, cover_url = import_image_to_wix(cloudinary_url, title, wix_headers)
+    # Import image to Wix Media
+    wix_file_id, wix_url = import_image_to_wix(cloudinary_url, title, wix_headers)
 
-    cover_media = {"image": {"id": wix_file_id, "url": cover_url}} if wix_file_id else {"image": {"url": cover_url}}
+    # Build heroImage
+    if wix_file_id:
+        hero_image = {"id": wix_file_id, "url": wix_url}
+    else:
+        hero_image = {"url": cloudinary_url}
 
+    # Convert content
     html_content = text_to_html(website_text)
     rich_content = convert_html_to_ricos(html_content, wix_headers)
-
     clean_text = clean_markdown(website_text)
     excerpt = " ".join(clean_text.split()[:40]) + "..."
 
+    # Create draft
     print("[WIX] Creating draft post...")
     draft_response = requests.post(
         "https://www.wixapis.com/blog/v3/draft-posts",
@@ -433,8 +345,11 @@ def publish_to_wix(title, website_text, cloudinary_url):
                 "title": title,
                 "excerpt": excerpt,
                 "richContent": rich_content,
-                "media": cover_media,
-                "heroImage": cover_media["image"],
+                "heroImage": hero_image,
+                "media": {
+                    "displayed": True,
+                    "custom": False
+                },
                 "featured": False,
                 "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"],
                 "memberId": "4d7e0085-753e-4aee-b7c6-ed66431fd9c6"
@@ -447,6 +362,7 @@ def publish_to_wix(title, website_text, cloudinary_url):
         raise Exception(f"[WIX] No draft ID: {draft_data}")
     print(f"[WIX] Draft created: {draft_id}")
 
+    # Verify
     verify_response = requests.get(
         f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}",
         headers=wix_headers
@@ -454,6 +370,7 @@ def publish_to_wix(title, website_text, cloudinary_url):
     check_response(verify_response, "WIX VERIFY DRAFT")
     print("[WIX] Draft verified OK")
 
+    # Publish
     print("[WIX] Publishing...")
     publish_response = requests.post(
         f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}/publish",
@@ -471,7 +388,7 @@ def publish_to_wix(title, website_text, cloudinary_url):
 # ============================================================
 
 def publish_to_instagram(caption, image_url):
-    print("[INSTAGRAM] Creating media container...")
+    print("[INSTAGRAM] Creating container...")
     container_response = requests.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media",
         data={"image_url": image_url, "caption": caption, "access_token": IG_TOKEN}
@@ -481,7 +398,7 @@ def publish_to_instagram(caption, image_url):
     if "error" in container:
         raise Exception(f"[INSTAGRAM] Container error: {container['error']['message']}")
     if "id" not in container:
-        raise Exception(f"[INSTAGRAM] Unexpected response: {container}")
+        raise Exception(f"[INSTAGRAM] Unexpected: {container}")
 
     container_id = container["id"]
     print(f"[INSTAGRAM] Container: {container_id}, waiting 5s...")
@@ -496,7 +413,7 @@ def publish_to_instagram(caption, image_url):
     if "error" in result:
         raise Exception(f"[INSTAGRAM] Publish error: {result['error']['message']}")
     if "id" not in result:
-        raise Exception(f"[INSTAGRAM] Unexpected response: {result}")
+        raise Exception(f"[INSTAGRAM] Unexpected: {result}")
 
     print(f"[INSTAGRAM] Published: {result['id']}")
     return result["id"]
@@ -516,13 +433,13 @@ def publish_to_facebook(message, image_url):
     if "error" in result:
         raise Exception(f"[FACEBOOK] Error: {result['error']['message']}")
     if "id" not in result:
-        raise Exception(f"[FACEBOOK] Unexpected response: {result}")
+        raise Exception(f"[FACEBOOK] Unexpected: {result}")
 
     print(f"[FACEBOOK] Published: {result['id']}")
     return result["id"]
 
 # ============================================================
-# MAIN PIPELINE
+# MAIN
 # ============================================================
 
 def run_pipeline():
@@ -530,43 +447,31 @@ def run_pipeline():
     print(f"Clarity Lab Pipeline — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
-    # Step 1: Topic
     index, rows, topic = get_next_topic()
 
-    # Step 2: Content
     content = generate_content(topic)
     title   = content["title"]
     ig_text = content["instagram"]
     website = content["website"]
 
-    # Step 3: Generate base image
     raw_image_path = generate_image(title, topic["Core Observation"])
-
-    # Step 4: Overlay branding
-    branded_image_path = overlay_branding(raw_image_path, title, ig_text)
-
-    # Step 5: Upload to Cloudinary
+    branded_image_path = overlay_logo(raw_image_path)
     cloudinary_url = upload_to_cloudinary(branded_image_path, title)
 
-    # Step 6-7: Publish to Wix
     post_url = publish_to_wix(title, website, cloudinary_url)
 
-    # Step 8: Instagram
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
     ig_caption = f"{ig_text}\n\nRead the full article → link in bio\n\n{hashtags}"
     publish_to_instagram(ig_caption, cloudinary_url)
 
-    # Step 9: Facebook
     fb_message = f"{ig_text}\n\nRead the full article → {post_url}"
     publish_to_facebook(fb_message, cloudinary_url)
 
-    # Step 10: Mark published
     mark_topic_published(index, rows, post_url)
 
     print(f"\n{'='*60}")
-    print(f"✅ Pipeline complete!")
-    print(f"   Title:   {title}")
-    print(f"   Article: {post_url}")
+    print(f"✅ Done! {title}")
+    print(f"   {post_url}")
     print(f"{'='*60}\n")
 
 if __name__ == "__main__":
