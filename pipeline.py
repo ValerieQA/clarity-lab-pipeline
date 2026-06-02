@@ -1,14 +1,13 @@
 """
-Clarity Lab — Automated Content Pipeline v11
+Clarity Lab — Automated Content Pipeline v12
 
-Fixes:
-- One master image per article for Website, Instagram, and Facebook
-- No GPT-generated logos, symbols, circles, monograms, text, or brand marks
-- Exact Clarity Lab logo added only via Pillow
-- People are not used as main subjects
-- Human presence allowed only as distant / partial / implied
-- Instagram receives soft editorial text overlay via Pillow
-- Website and Facebook use the same clean branded master image
+Final visual fixes:
+- One master image for Website, Instagram, Facebook
+- No people at all
+- No GPT-generated logos, symbols, circles, letters, monograms, or text
+- Real logo added only via Pillow
+- Light luxury editorial style with elegant contrast and deeper shadows
+- Instagram text added via Pillow in lower center
 """
 
 import os
@@ -20,7 +19,7 @@ import tempfile
 import requests
 from datetime import datetime
 from openai import OpenAI
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import cloudinary
 import cloudinary.uploader
@@ -60,7 +59,7 @@ VISUAL_JOURNEY = [
     {"name": "Linen Earth", "mood": "earthy depth, quiet introspection, texture", "palette": "linen, stone, earth beige, warm grey, muted brown"},
     {"name": "Dust Rose", "mood": "transition, softening, emotional nuance", "palette": "dust rose, muted terracotta, soft beige, pale clay, warm shadow"},
     {"name": "Dusty Blue", "mood": "deepening, inner depth, calm concentration", "palette": "dusty blue, slate blue, cream, soft grey, muted navy"},
-    {"name": "Deep Evening Light", "mood": "reflection, quiet depth, but still soft and open", "palette": "soft navy accents, dusty blue, warm cream, muted gold, gentle shadow"},
+    {"name": "Deep Evening", "mood": "reflection, quiet depth, elegant shadow", "palette": "deep navy accents, dusty blue, warm cream, muted gold, soft shadow"},
     {"name": "Twilight", "mood": "integration, rest, pause before renewal", "palette": "twilight blue, mauve-grey, muted lilac, soft peach, dusk cream"},
     {"name": "Return To Mist", "mood": "renewal, clarity returning, a new cycle", "palette": "mist blue, pale cream, soft grey-blue, quiet white, distant green"},
 ]
@@ -103,6 +102,11 @@ def get_image_brightness(img):
     arr = np.array(gray)
     return float(arr.mean())
 
+def get_region_brightness(img, box):
+    region = img.crop(box).convert("L")
+    arr = np.array(region)
+    return float(arr.mean())
+
 def get_visual_state(index):
     return VISUAL_JOURNEY[index % len(VISUAL_JOURNEY)]
 
@@ -143,14 +147,26 @@ def wrap_text_by_width(draw, text, font, max_width):
 
     return lines
 
-def get_instagram_support_line(ig_text):
+def draw_centered_lines(draw, lines, center_x, y, font, fill, line_gap=10):
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_w = bbox[2] - bbox[0]
+        line_h = bbox[3] - bbox[1]
+        draw.text((center_x - line_w / 2, y), line, font=font, fill=fill)
+        y += line_h + line_gap
+    return y
+
+def get_instagram_phrase(ig_text, title):
     clean = clean_markdown(ig_text)
     lines = [line.strip() for line in clean.split("\n") if line.strip()]
+
     for line in lines:
-        if "Read the full reflection" not in line and len(line) <= 110:
+        if "Read the full reflection" not in line and len(line) <= 115:
             return line
+
     words = clean.split()
-    return " ".join(words[:14]) if words else ""
+    phrase = " ".join(words[:14]) if words else title
+    return phrase.strip()
 
 # ============================================================
 # STEP 1: Pick next topic
@@ -243,7 +259,7 @@ def parse_content(raw_text):
 
 def build_master_image_prompt(title, core_observation, audience_question, visual_state, accent_state):
     return f"""
-Create one master image for a Clarity Lab reflection.
+Create one master image for a reflective Clarity Lab article.
 
 This image will be used across Website, Instagram, and Facebook.
 It must be one coherent visual world.
@@ -280,66 +296,63 @@ Optional accent:
 The palette influences mood and color treatment, but should not dictate the subject matter.
 Favor semantic relevance over decorative consistency.
 
-Avoid literal illustration.
-Do not show obvious symbols like brains, lightbulbs, icons, charts, or motivational graphics.
-Express the idea indirectly through atmosphere, composition, symbolism, light, space, materials, nature, architecture, water, interiors, landscapes, movement, or stillness.
+Luxury editorial direction:
+Think quiet luxury, refined interiors, timeless editorial photography, natural materials, architectural calm, textured surfaces, soft fabric, stone, paper, glass, water, air, shadow, and light.
+The image should feel expensive, quiet, minimal, and human without showing humans.
+Avoid generic lifestyle imagery.
+Avoid social media template aesthetics.
+Avoid overly sentimental scenes.
+Avoid motivational poster style.
 
-Human presence rule:
-Do not use people as the main subject.
-No close-up people.
-No detailed faces.
-No portrait composition.
-No gender-coded central character.
-Human presence may appear only as distant silhouettes, partial figures, shadows, hands, blurred movement, or implied presence.
-Prefer spaces, objects, light, architecture, nature, water, interiors, materials, and atmosphere.
+Light and contrast:
+Use a light-first palette, but do not make the image flat.
+Use elegant contrast.
+Use deep shadows as design elements.
+Allow 30–40% darker tonal areas if they create depth, structure, luxury, and visual rhythm.
+Keep the overall image calm, luminous, and breathable.
+Use natural light, sculptural shadows, soft gradients, and material depth.
+Avoid harsh cinematic drama.
+Avoid muddy olive or overly saturated green.
+Avoid heavy dark backgrounds.
+Avoid washed-out low-contrast beige.
+
+Human rule:
+No people at all.
+No human figures.
+No portraits.
+No faces.
+No silhouettes.
+No hands.
+No bodies.
+No shadows of people.
+No implied person as the subject.
+
+Branding and text rule:
+Do not generate any logo.
+Do not draw Clarity Lab logo.
+Do not draw logo placeholders.
+Do not create circles, monograms, initials, letters, symbols, emblems, stamps, watermarks, or brand marks.
+Do not include text.
+Do not include typography.
+Do not include fake letters.
+Do not include decorative circular marks.
+Logo and Instagram text will be added later with code.
+
+Avoid literal illustration.
+Do not show obvious symbols like brains, lightbulbs, icons, charts, arrows, or motivational graphics.
+Express the idea indirectly through atmosphere, composition, symbolism, light, space, materials, nature, architecture, water, interiors, landscapes, movement, or stillness.
 
 Objects and environments should emerge naturally from the reflection.
 Do not repeat the same books, stones, cups, ceramics, and plants by default.
 Avoid repeating visual compositions from recent posts.
 The feed should feel like one evolving visual conversation.
 
-Overall style:
-calm editorial photography,
-high-end magazine quality,
-quiet luxury,
-human but spacious,
-reflective,
-light-filled atmosphere,
-soft natural light,
-subtle shadows,
-airy composition,
-Clarity Lab atmosphere,
-non-marketing,
-non-corporate,
-non-performative.
-
-Color rule:
-Light-first palette.
-Favor brightness over darkness.
-Favor openness over drama.
-Use dark tones only as subtle shadows or depth accents.
-Avoid dramatic contrast.
-Avoid heavy dark backgrounds.
-Avoid cinematic color grading.
-Avoid overly saturated colors.
-
-Strict branding and text rule:
-Do not generate any logo.
-Do not draw Clarity Lab logo.
-Do not draw any logo placeholder.
-Do not create circles, monograms, initials, letters, symbols, emblems, stamps, watermarks, or brand marks.
-Do not include text.
-Do not include typography.
-Do not include fake letters.
-Do not include decorative circular marks.
-Logo and text will be added later.
-
 Format:
 Square 1024x1024.
 
 Composition:
-Leave quiet negative space in the upper-left area for a small Clarity Lab logo overlay.
-Leave some calm negative space for possible Instagram editorial text overlay.
+Leave clean negative space in the upper-left area for a small logo overlay.
+Leave calm negative space in the lower third or lower center for a short Instagram text overlay.
 The image should work cleanly as a website cover, Instagram post, and Facebook image.
 """
 
@@ -389,9 +402,15 @@ def overlay_logo(image_path):
     img = Image.open(image_path).convert("RGBA")
     W, H = img.size
 
-    brightness = get_image_brightness(img)
-    is_dark = brightness < 128
-    logo_path = LOGO_WHITE if is_dark else LOGO_DARK
+    logo_area = (
+        int(W * 0.04),
+        int(H * 0.04),
+        int(W * 0.32),
+        int(H * 0.22)
+    )
+    local_brightness = get_region_brightness(img, logo_area)
+
+    logo_path = LOGO_DARK if local_brightness > 135 else LOGO_WHITE
 
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
 
@@ -406,7 +425,7 @@ def overlay_logo(image_path):
         logo_y = int(H * 0.055)
 
         overlay.paste(logo, (logo_x, logo_y), logo)
-        print(f"[PILLOW] Logo placed — brightness: {brightness:.0f}")
+        print(f"[PILLOW] Logo placed — local brightness: {local_brightness:.0f}")
     except Exception as e:
         print(f"[PILLOW] Logo error: {e}")
 
@@ -420,7 +439,7 @@ def overlay_logo(image_path):
     return branded_path
 
 # ============================================================
-# STEP 5B: Instagram editorial version
+# STEP 5B: Instagram editorial text
 # ============================================================
 
 def overlay_instagram_editorial(image_path, title, ig_text):
@@ -429,27 +448,25 @@ def overlay_instagram_editorial(image_path, title, ig_text):
     img = Image.open(image_path).convert("RGBA")
     W, H = img.size
 
-    brightness = get_image_brightness(img)
-    is_dark = brightness < 128
+    logo_area = (
+        int(W * 0.04),
+        int(H * 0.04),
+        int(W * 0.32),
+        int(H * 0.22)
+    )
+    local_brightness = get_region_brightness(img, logo_area)
 
-    logo_path = LOGO_WHITE if is_dark else LOGO_DARK
-    main_color = (245, 240, 232, 235) if is_dark else (29, 43, 49, 235)
-    soft_color = (235, 228, 218, 205) if is_dark else (70, 82, 84, 205)
+    logo_path = LOGO_DARK if local_brightness > 135 else LOGO_WHITE
 
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-
-    # Very soft readability veil, not a hard panel
-    veil = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    veil_draw = ImageDraw.Draw(veil)
-    if is_dark:
-        veil_draw.rectangle((0, 0, W, H), fill=(0, 0, 0, 20))
-    else:
-        veil_draw.rectangle((0, 0, W, H), fill=(255, 250, 242, 22))
-    overlay = Image.alpha_composite(overlay, veil)
-
     draw = ImageDraw.Draw(overlay)
 
-    # Logo
+    # Soft lower-third veil for readability.
+    # Not a hard box; just a subtle editorial gradient-like layer.
+    for y in range(int(H * 0.56), H):
+        alpha = int(58 * ((y - int(H * 0.56)) / (H - int(H * 0.56))))
+        draw.line((0, y, W, y), fill=(255, 248, 238, alpha))
+
     try:
         logo = Image.open(logo_path).convert("RGBA")
         logo_w = int(W * 0.17)
@@ -464,37 +481,50 @@ def overlay_instagram_editorial(image_path, title, ig_text):
     except Exception as e:
         print(f"[PILLOW] Instagram logo error: {e}")
 
-    title_font = get_font(54, serif=True)
-    subtitle_font = get_font(25, serif=True)
-    small_font = get_font(16, serif=False)
+    draw = ImageDraw.Draw(overlay)
 
-    x = int(W * 0.09)
-    max_width = int(W * 0.72)
+    phrase = get_instagram_phrase(ig_text, title)
 
-    # Prefer lower-left area, leaving logo untouched
-    y = int(H * 0.54)
+    phrase_font = get_font(38, serif=True)
+    small_font = get_font(15, serif=False)
 
-    title_lines = wrap_text_by_width(draw, title, title_font, max_width)
-    for line in title_lines[:3]:
-        draw.text((x, y), line, font=title_font, fill=main_color)
-        bbox = draw.textbbox((x, y), line, font=title_font)
-        y += (bbox[3] - bbox[1]) + 10
+    center_x = W / 2
+    max_width = int(W * 0.76)
 
-    support = get_instagram_support_line(ig_text)
-    if support:
-        y += 24
-        support_lines = wrap_text_by_width(draw, support, subtitle_font, max_width)
-        for line in support_lines[:2]:
-            draw.text((x, y), line, font=subtitle_font, fill=soft_color)
-            bbox = draw.textbbox((x, y), line, font=subtitle_font)
-            y += (bbox[3] - bbox[1]) + 8
+    phrase_lines = wrap_text_by_width(draw, phrase, phrase_font, max_width)
+    phrase_lines = phrase_lines[:3]
+
+    total_text_height = 0
+    for line in phrase_lines:
+        bbox = draw.textbbox((0, 0), line, font=phrase_font)
+        total_text_height += (bbox[3] - bbox[1]) + 10
+
+    start_y = int(H * 0.68)
+    if len(phrase_lines) >= 3:
+        start_y = int(H * 0.62)
+
+    text_color = (35, 41, 42, 235)
+    small_color = (65, 70, 70, 195)
+
+    y = start_y
+    y = draw_centered_lines(
+        draw=draw,
+        lines=phrase_lines,
+        center_x=center_x,
+        y=y,
+        font=phrase_font,
+        fill=text_color,
+        line_gap=10
+    )
 
     bottom = "READ THE FULL REFLECTION ON THE SITE."
+    bbox = draw.textbbox((0, 0), bottom, font=small_font)
+    bottom_w = bbox[2] - bbox[0]
     draw.text(
-        (x, int(H * 0.90)),
+        (center_x - bottom_w / 2, int(H * 0.90)),
         bottom,
         font=small_font,
-        fill=soft_color
+        fill=small_color
     )
 
     result = Image.alpha_composite(img, overlay).convert("RGB")
@@ -751,7 +781,7 @@ def publish_to_facebook(message, image_url):
 
 def run_pipeline():
     print(f"\n{'='*60}")
-    print(f"Clarity Lab Pipeline v11 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"Clarity Lab Pipeline v12 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
     index, rows, topic = get_next_topic()
