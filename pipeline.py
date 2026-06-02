@@ -1,13 +1,14 @@
 """
-Clarity Lab — Automated Content Pipeline v10
+Clarity Lab — Automated Content Pipeline v11
 
 Fixes:
 - One master image per article for Website, Instagram, and Facebook
-- No separate scenes per platform
-- No GPT-generated logos or brand marks
+- No GPT-generated logos, symbols, circles, monograms, text, or brand marks
 - Exact Clarity Lab logo added only via Pillow
-- Light-first Clarity Lab visual tone
-- Topic-oriented image generation with visual journey palette
+- People are not used as main subjects
+- Human presence allowed only as distant / partial / implied
+- Instagram receives soft editorial text overlay via Pillow
+- Website and Facebook use the same clean branded master image
 """
 
 import os
@@ -19,7 +20,7 @@ import tempfile
 import requests
 from datetime import datetime
 from openai import OpenAI
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import numpy as np
 import cloudinary
 import cloudinary.uploader
@@ -49,71 +50,19 @@ LOGO_WHITE         = "config/logo_white.png"
 # ============================================================
 
 VISUAL_JOURNEY = [
-    {
-        "name": "Morning Mist",
-        "mood": "fresh clarity, quiet beginning, soft light",
-        "palette": "mist blue, pale cream, light stone, soft grey-blue, airy white"
-    },
-    {
-        "name": "Pale Sky",
-        "mood": "lightness, openness, space to breathe",
-        "palette": "pale sky blue, cloud white, soft beige, muted horizon blue"
-    },
-    {
-        "name": "Sea Foam",
-        "mood": "airy calm, subtle movement, emotional spaciousness",
-        "palette": "sea foam green, blue-grey, soft cream, washed natural tones"
-    },
-    {
-        "name": "Soft Sage",
-        "mood": "gentle balance, grounded growth, natural quiet",
-        "palette": "soft sage, muted olive, cream, linen, warm grey"
-    },
-    {
-        "name": "Warm Leaf",
-        "mood": "natural warmth, subtle energy, living stillness",
-        "palette": "warm green, muted leaf, beige, soft gold, natural shadow"
-    },
-    {
-        "name": "Sand Dune",
-        "mood": "comfort, inner stability, warm ground",
-        "palette": "sand beige, dune cream, pale clay, soft taupe, warm light"
-    },
-    {
-        "name": "Honey Clay",
-        "mood": "soft warmth, nourishment, human presence",
-        "palette": "honey beige, clay, cream, warm ochre, muted caramel"
-    },
-    {
-        "name": "Linen Earth",
-        "mood": "earthy depth, quiet introspection, texture",
-        "palette": "linen, stone, earth beige, warm grey, muted brown"
-    },
-    {
-        "name": "Dust Rose",
-        "mood": "transition, softening, emotional nuance",
-        "palette": "dust rose, muted terracotta, soft beige, pale clay, warm shadow"
-    },
-    {
-        "name": "Dusty Blue",
-        "mood": "deepening, inner depth, calm concentration",
-        "palette": "dusty blue, slate blue, cream, soft grey, muted navy"
-    },
-    {
-        "name": "Deep Evening Light",
-        "mood": "reflection, quiet depth, but still soft and open",
-        "palette": "soft navy accents, dusty blue, warm cream, muted gold, gentle shadow"
-    },
-    {
-        "name": "Twilight",
-        "mood": "integration, rest, pause before renewal",
-        "palette": "twilight blue, mauve-grey, muted lilac, soft peach, dusk cream"
-    },
-    {
-        "name": "Return To Mist",
-        "mood": "renewal, clarity returning, a new cycle",
-        "palette": "mist blue, pale cream, soft grey-blue, quiet white, distant green"
-    },
+    {"name": "Morning Mist", "mood": "fresh clarity, quiet beginning, soft light", "palette": "mist blue, pale cream, light stone, soft grey-blue, airy white"},
+    {"name": "Pale Sky", "mood": "lightness, openness, space to breathe", "palette": "pale sky blue, cloud white, soft beige, muted horizon blue"},
+    {"name": "Sea Foam", "mood": "airy calm, subtle movement, emotional spaciousness", "palette": "sea foam green, blue-grey, soft cream, washed natural tones"},
+    {"name": "Soft Sage", "mood": "gentle balance, grounded growth, natural quiet", "palette": "soft sage, muted olive, cream, linen, warm grey"},
+    {"name": "Warm Leaf", "mood": "natural warmth, subtle energy, living stillness", "palette": "warm green, muted leaf, beige, soft gold, natural shadow"},
+    {"name": "Sand Dune", "mood": "comfort, inner stability, warm ground", "palette": "sand beige, dune cream, pale clay, soft taupe, warm light"},
+    {"name": "Honey Clay", "mood": "soft warmth, nourishment, human presence", "palette": "honey beige, clay, cream, warm ochre, muted caramel"},
+    {"name": "Linen Earth", "mood": "earthy depth, quiet introspection, texture", "palette": "linen, stone, earth beige, warm grey, muted brown"},
+    {"name": "Dust Rose", "mood": "transition, softening, emotional nuance", "palette": "dust rose, muted terracotta, soft beige, pale clay, warm shadow"},
+    {"name": "Dusty Blue", "mood": "deepening, inner depth, calm concentration", "palette": "dusty blue, slate blue, cream, soft grey, muted navy"},
+    {"name": "Deep Evening Light", "mood": "reflection, quiet depth, but still soft and open", "palette": "soft navy accents, dusty blue, warm cream, muted gold, gentle shadow"},
+    {"name": "Twilight", "mood": "integration, rest, pause before renewal", "palette": "twilight blue, mauve-grey, muted lilac, soft peach, dusk cream"},
+    {"name": "Return To Mist", "mood": "renewal, clarity returning, a new cycle", "palette": "mist blue, pale cream, soft grey-blue, quiet white, distant green"},
 ]
 
 ACCENT_STATES = [
@@ -161,6 +110,47 @@ def get_accent_state(index):
     if index % 3 == 0:
         return ACCENT_STATES[index % len(ACCENT_STATES)]
     return "no strong accent, only subtle natural variation"
+
+def get_font(size, serif=False):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf" if serif else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf" if serif else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+def wrap_text_by_width(draw, text, font, max_width):
+    words = clean_markdown(text).replace("\n", " ").split()
+    lines = []
+    current = ""
+
+    for word in words:
+        test = f"{current} {word}".strip()
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+
+    if current:
+        lines.append(current)
+
+    return lines
+
+def get_instagram_support_line(ig_text):
+    clean = clean_markdown(ig_text)
+    lines = [line.strip() for line in clean.split("\n") if line.strip()]
+    for line in lines:
+        if "Read the full reflection" not in line and len(line) <= 110:
+            return line
+    words = clean.split()
+    return " ".join(words[:14]) if words else ""
 
 # ============================================================
 # STEP 1: Pick next topic
@@ -292,7 +282,16 @@ Favor semantic relevance over decorative consistency.
 
 Avoid literal illustration.
 Do not show obvious symbols like brains, lightbulbs, icons, charts, or motivational graphics.
-Express the idea indirectly through atmosphere, composition, symbolism, light, space, materials, nature, architecture, water, interiors, landscapes, quiet human presence, movement, or stillness.
+Express the idea indirectly through atmosphere, composition, symbolism, light, space, materials, nature, architecture, water, interiors, landscapes, movement, or stillness.
+
+Human presence rule:
+Do not use people as the main subject.
+No close-up people.
+No detailed faces.
+No portrait composition.
+No gender-coded central character.
+Human presence may appear only as distant silhouettes, partial figures, shadows, hands, blurred movement, or implied presence.
+Prefer spaces, objects, light, architecture, nature, water, interiors, materials, and atmosphere.
 
 Objects and environments should emerge naturally from the reflection.
 Do not repeat the same books, stones, cups, ceramics, and plants by default.
@@ -303,9 +302,8 @@ Overall style:
 calm editorial photography,
 high-end magazine quality,
 quiet luxury,
-human,
+human but spacious,
 reflective,
-spacious,
 light-filled atmosphere,
 soft natural light,
 subtle shadows,
@@ -325,20 +323,23 @@ Avoid heavy dark backgrounds.
 Avoid cinematic color grading.
 Avoid overly saturated colors.
 
-Branding rule:
+Strict branding and text rule:
 Do not generate any logo.
 Do not draw Clarity Lab logo.
-Do not place brand marks.
+Do not draw any logo placeholder.
+Do not create circles, monograms, initials, letters, symbols, emblems, stamps, watermarks, or brand marks.
 Do not include text.
 Do not include typography.
 Do not include fake letters.
-Logo will be added later.
+Do not include decorative circular marks.
+Logo and text will be added later.
 
 Format:
 Square 1024x1024.
 
 Composition:
 Leave quiet negative space in the upper-left area for a small Clarity Lab logo overlay.
+Leave some calm negative space for possible Instagram editorial text overlay.
 The image should work cleanly as a website cover, Instagram post, and Facebook image.
 """
 
@@ -379,7 +380,7 @@ def generate_master_image(title, core_observation, audience_question, visual_sta
     return tmp_path
 
 # ============================================================
-# STEP 5: Overlay exact Clarity Lab logo only
+# STEP 5A: Overlay exact Clarity Lab logo only
 # ============================================================
 
 def overlay_logo(image_path):
@@ -396,11 +397,9 @@ def overlay_logo(image_path):
 
     try:
         logo = Image.open(logo_path).convert("RGBA")
-
-        logo_w = int(W * 0.20)
+        logo_w = int(W * 0.18)
         logo_ratio = logo.height / logo.width
         logo_h = int(logo_w * logo_ratio)
-
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
 
         logo_x = int(W * 0.055)
@@ -417,8 +416,95 @@ def overlay_logo(image_path):
         result.save(tmp.name, "JPEG", quality=95)
         branded_path = tmp.name
 
-    print(f"[PILLOW] Branded master image saved: {branded_path}")
+    print(f"[PILLOW] Branded image saved: {branded_path}")
     return branded_path
+
+# ============================================================
+# STEP 5B: Instagram editorial version
+# ============================================================
+
+def overlay_instagram_editorial(image_path, title, ig_text):
+    print("[PILLOW] Creating Instagram editorial image...")
+
+    img = Image.open(image_path).convert("RGBA")
+    W, H = img.size
+
+    brightness = get_image_brightness(img)
+    is_dark = brightness < 128
+
+    logo_path = LOGO_WHITE if is_dark else LOGO_DARK
+    main_color = (245, 240, 232, 235) if is_dark else (29, 43, 49, 235)
+    soft_color = (235, 228, 218, 205) if is_dark else (70, 82, 84, 205)
+
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+
+    # Very soft readability veil, not a hard panel
+    veil = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    veil_draw = ImageDraw.Draw(veil)
+    if is_dark:
+        veil_draw.rectangle((0, 0, W, H), fill=(0, 0, 0, 20))
+    else:
+        veil_draw.rectangle((0, 0, W, H), fill=(255, 250, 242, 22))
+    overlay = Image.alpha_composite(overlay, veil)
+
+    draw = ImageDraw.Draw(overlay)
+
+    # Logo
+    try:
+        logo = Image.open(logo_path).convert("RGBA")
+        logo_w = int(W * 0.17)
+        logo_ratio = logo.height / logo.width
+        logo_h = int(logo_w * logo_ratio)
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+
+        logo_x = int(W * 0.055)
+        logo_y = int(H * 0.055)
+
+        overlay.paste(logo, (logo_x, logo_y), logo)
+    except Exception as e:
+        print(f"[PILLOW] Instagram logo error: {e}")
+
+    title_font = get_font(54, serif=True)
+    subtitle_font = get_font(25, serif=True)
+    small_font = get_font(16, serif=False)
+
+    x = int(W * 0.09)
+    max_width = int(W * 0.72)
+
+    # Prefer lower-left area, leaving logo untouched
+    y = int(H * 0.54)
+
+    title_lines = wrap_text_by_width(draw, title, title_font, max_width)
+    for line in title_lines[:3]:
+        draw.text((x, y), line, font=title_font, fill=main_color)
+        bbox = draw.textbbox((x, y), line, font=title_font)
+        y += (bbox[3] - bbox[1]) + 10
+
+    support = get_instagram_support_line(ig_text)
+    if support:
+        y += 24
+        support_lines = wrap_text_by_width(draw, support, subtitle_font, max_width)
+        for line in support_lines[:2]:
+            draw.text((x, y), line, font=subtitle_font, fill=soft_color)
+            bbox = draw.textbbox((x, y), line, font=subtitle_font)
+            y += (bbox[3] - bbox[1]) + 8
+
+    bottom = "READ THE FULL REFLECTION ON THE SITE."
+    draw.text(
+        (x, int(H * 0.90)),
+        bottom,
+        font=small_font,
+        fill=soft_color
+    )
+
+    result = Image.alpha_composite(img, overlay).convert("RGB")
+
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        result.save(tmp.name, "JPEG", quality=95)
+        instagram_path = tmp.name
+
+    print(f"[PILLOW] Instagram editorial image saved: {instagram_path}")
+    return instagram_path
 
 # ============================================================
 # STEP 6: Upload to Cloudinary
@@ -665,7 +751,7 @@ def publish_to_facebook(message, image_url):
 
 def run_pipeline():
     print(f"\n{'='*60}")
-    print(f"Clarity Lab Pipeline v10 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"Clarity Lab Pipeline v11 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
     index, rows, topic = get_next_topic()
@@ -693,20 +779,22 @@ def run_pipeline():
         accent_state=accent_state
     )
 
-    branded_master = overlay_logo(master_raw)
+    website_image = overlay_logo(master_raw)
+    instagram_image = overlay_instagram_editorial(master_raw, title, ig_text)
 
-    master_url = upload_to_cloudinary(branded_master, title, "master")
+    website_url = upload_to_cloudinary(website_image, title, "website")
+    instagram_url = upload_to_cloudinary(instagram_image, title, "instagram")
 
-    post_url = publish_to_wix(title, website, master_url)
+    post_url = publish_to_wix(title, website, website_url)
 
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
 
     ig_caption = f"{ig_text}\n\nRead the full article → link in bio\n\n{hashtags}"
-    publish_to_instagram(ig_caption, master_url)
+    publish_to_instagram(ig_caption, instagram_url)
 
     fb_text = ig_text[:500] if len(ig_text) > 500 else ig_text
     fb_message = f"{fb_text}\n\nRead the full article → {post_url}"
-    publish_to_facebook(fb_message, master_url)
+    publish_to_facebook(fb_message, website_url)
 
     mark_topic_published(index, rows, post_url)
 
