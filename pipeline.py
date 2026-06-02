@@ -1,9 +1,15 @@
 """
-Clarity Lab — Automated Content Pipeline v8
-Updates:
-- Removed image prompt bans: people, text, logos are no longer forbidden
-- Keeps one master image for Wix / Facebook
-- Creates a separate Instagram image with elegant Clarity Lab text overlay
+Clarity Lab — Automated Content Pipeline v9
+
+Visual architecture:
+- 3 separate GPT images per post:
+  1. Website cover
+  2. Instagram editorial cover
+  3. Facebook image
+- No text overlay via Pillow
+- Pillow is used only for exact Clarity Lab logo placement
+- Visuals are topic-oriented first, palette-oriented second
+- Uses Clarity Lab visual tone journey
 """
 
 import os
@@ -12,11 +18,10 @@ import re
 import time
 import base64
 import tempfile
-import textwrap
 import requests
 from datetime import datetime
 from openai import OpenAI
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image
 import numpy as np
 import cloudinary
 import cloudinary.uploader
@@ -40,6 +45,87 @@ TOPICS_FILE        = "topics.csv"
 PROMPT_FILE        = "config/prompt.md"
 LOGO_DARK          = "config/logo_dark.png"
 LOGO_WHITE         = "config/logo_white.png"
+
+# ============================================================
+# VISUAL SYSTEM
+# ============================================================
+
+VISUAL_JOURNEY = [
+    {
+        "name": "Morning Mist",
+        "mood": "fresh clarity, quiet beginning, soft light",
+        "palette": "mist blue, pale cream, light stone, soft grey-blue, airy white"
+    },
+    {
+        "name": "Pale Sky",
+        "mood": "lightness, openness, space to breathe",
+        "palette": "pale sky blue, cloud white, soft beige, muted horizon blue"
+    },
+    {
+        "name": "Sea Foam",
+        "mood": "airy calm, subtle movement, emotional spaciousness",
+        "palette": "sea foam green, blue-grey, soft cream, washed natural tones"
+    },
+    {
+        "name": "Soft Sage",
+        "mood": "gentle balance, grounded growth, natural quiet",
+        "palette": "soft sage, muted olive, cream, linen, warm grey"
+    },
+    {
+        "name": "Warm Leaf",
+        "mood": "natural warmth, subtle energy, living stillness",
+        "palette": "warm green, muted leaf, beige, soft gold, natural shadow"
+    },
+    {
+        "name": "Sand Dune",
+        "mood": "comfort, inner stability, warm ground",
+        "palette": "sand beige, dune cream, pale clay, soft taupe, warm light"
+    },
+    {
+        "name": "Honey Clay",
+        "mood": "soft warmth, nourishment, human presence",
+        "palette": "honey beige, clay, cream, warm ochre, muted caramel"
+    },
+    {
+        "name": "Linen Earth",
+        "mood": "earthy depth, quiet introspection, texture",
+        "palette": "linen, stone, earth beige, warm grey, muted brown"
+    },
+    {
+        "name": "Dust Rose",
+        "mood": "transition, softening, emotional nuance",
+        "palette": "dust rose, muted terracotta, soft beige, pale clay, warm shadow"
+    },
+    {
+        "name": "Dusty Blue",
+        "mood": "deepening, inner depth, calm concentration",
+        "palette": "dusty blue, slate blue, cream, soft grey, muted navy"
+    },
+    {
+        "name": "Deep Evening",
+        "mood": "reflection, inner knowing, quiet depth",
+        "palette": "deep navy, blue-black, warm cream, muted gold, soft shadow"
+    },
+    {
+        "name": "Twilight",
+        "mood": "integration, rest, pause before renewal",
+        "palette": "twilight blue, mauve-grey, muted lilac, soft peach, dusk cream"
+    },
+    {
+        "name": "Return To Mist",
+        "mood": "renewal, clarity returning, a new cycle",
+        "palette": "mist blue, pale cream, soft grey-blue, quiet white, distant green"
+    },
+]
+
+ACCENT_STATES = [
+    "muted terracotta",
+    "soft golden hour",
+    "dusty mauve",
+    "muted lilac",
+    "deep olive",
+    "ocean teal",
+]
 
 # ============================================================
 # HELPERS
@@ -70,37 +156,21 @@ def get_image_brightness(img):
     arr = np.array(gray)
     return float(arr.mean())
 
-def get_font(size, serif=False):
-    candidates = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf" if serif else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf" if serif else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    ]
-    for path in candidates:
-        try:
-            return ImageFont.truetype(path, size)
-        except Exception:
-            continue
-    return ImageFont.load_default()
+def get_visual_state(index):
+    return VISUAL_JOURNEY[index % len(VISUAL_JOURNEY)]
 
-def wrap_text_by_width(draw, text, font, max_width):
-    words = clean_markdown(text).replace("\n", " ").split()
-    lines = []
-    current = ""
+def get_accent_state(index):
+    if index % 3 == 0:
+        return ACCENT_STATES[index % len(ACCENT_STATES)]
+    return "no strong accent, only subtle natural variation"
 
-    for word in words:
-        test = f"{current} {word}".strip()
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if bbox[2] - bbox[0] <= max_width:
-            current = test
-        else:
-            if current:
-                lines.append(current)
-            current = word
-
-    if current:
-        lines.append(current)
-
-    return lines
+def get_instagram_short_line(ig_text, title):
+    clean = clean_markdown(ig_text)
+    lines = [line.strip() for line in clean.split("\n") if line.strip()]
+    for line in lines:
+        if "Read the full reflection" not in line and len(line) <= 90:
+            return line
+    return title
 
 # ============================================================
 # STEP 1: Pick next topic
@@ -132,6 +202,7 @@ def mark_topic_published(index, rows, post_url):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
     print("[TOPICS] Status updated to Published")
 
 # ============================================================
@@ -187,35 +258,161 @@ def parse_content(raw_text):
     return sections
 
 # ============================================================
-# STEP 3: Generate image via gpt-image-1
+# STEP 3: Generate visual prompts
 # ============================================================
 
-def generate_image(title, core_observation):
+def build_visual_prompt(kind, title, core_observation, audience_question, visual_state, accent_state, ig_line=None):
+    base = f"""
+Clarity Lab visual system.
+
+Article title:
+"{title}"
+
+Core observation:
+"{core_observation}"
+
+Audience question:
+"{audience_question}"
+
+The visual scene should emerge primarily from the article topic and core observation.
+The image should be topic-oriented first.
+
+Visual hierarchy:
+70% article topic and core observation.
+20% visual journey state.
+10% subtle accent variation.
+
+Visual journey state:
+{visual_state["name"]}
+
+Mood:
+{visual_state["mood"]}
+
+Palette direction:
+{visual_state["palette"]}
+
+Optional accent:
+{accent_state}
+
+The palette influences mood and color treatment, but should not dictate the subject matter.
+Favor semantic relevance over decorative consistency.
+
+Avoid literal illustration.
+Do not show obvious symbols like brains, lightbulbs, icons, charts, or motivational graphics.
+Express the idea indirectly through atmosphere, composition, symbolism, light, space, materials, nature, architecture, water, interiors, landscapes, quiet human presence, movement, or stillness.
+
+Objects and environments should emerge naturally from the reflection.
+Do not repeat the same books, stones, cups, ceramics, and plants by default.
+Avoid repeating visual compositions from recent posts.
+The feed should feel like one evolving visual conversation.
+
+Overall style:
+calm, editorial, high-end magazine quality,
+quiet luxury, human, reflective, spacious,
+soft natural light, thoughtful shadows,
+Clarity Lab atmosphere,
+non-marketing, non-corporate, non-performative.
+"""
+
+    if kind == "website":
+        return base + """
+Create a WEBSITE BLOG COVER IMAGE.
+
+Format:
+Square 1024x1024.
+
+Composition:
+clean editorial photograph,
+no article title text,
+no quote text,
+no captions,
+leave quiet negative space in the upper-left area for a small Clarity Lab logo overlay.
+
+The image should work as a calm website cover.
+"""
+
+    if kind == "facebook":
+        return base + """
+Create a FACEBOOK POST IMAGE.
+
+Format:
+Square 1024x1024.
+
+Composition:
+editorial feature image,
+no article title text,
+no quote text,
+no captions,
+leave quiet negative space in the upper-left area for a small Clarity Lab logo overlay.
+
+The image should feel related to the website image but not identical.
+"""
+
+    if kind == "instagram":
+        return base + f"""
+Create an INSTAGRAM EDITORIAL COVER.
+
+Format:
+Square 1024x1024.
+
+This image may include integrated editorial typography as part of the design.
+
+Use this exact title text if typography appears:
+"{title}"
+
+Optional short supporting line:
+"{ig_line}"
+
+Typography direction:
+elegant serif editorial typography,
+quiet magazine cover design,
+not motivational poster,
+not social media template,
+not loud,
+not crowded.
+
+Important:
+Typography must feel naturally designed into the composition.
+Leave intentional negative space.
+Leave clean negative space in the upper-left area for a small Clarity Lab logo overlay.
+Do not place large text over the upper-left logo area.
+Do not add hashtags.
+Do not add fake UI elements.
+Do not add extra words beyond the title and optional short supporting line.
+
+The Instagram cover should feel like a refined reflective magazine page.
+"""
+
+    raise ValueError(f"Unknown image kind: {kind}")
+
+# ============================================================
+# STEP 4: Generate image via GPT Image
+# ============================================================
+
+def generate_visual_image(kind, title, core_observation, audience_question, visual_state, accent_state, ig_line=None):
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    image_prompt = (
-        f'Calm, minimal, atmospheric photograph-style image '
-        f'for a reflective article titled "{title}". '
-        f'Core idea: "{core_observation}". '
-        f'Style: warm coffee tones, soft blues, muted beige and cream palette. '
-        f'Soft natural light, shadows, minimal composition. '
-        f'Abstract editorial atmosphere, still life, interior detail, books, stones, ceramics, plants, soft textures, or quiet human presence if natural. '
-        f'Mood: quiet, precise, human, thoughtful. '
-        f'High-end editorial photography for Clarity Lab. '
-        f'Square format.'
+    prompt = build_visual_prompt(
+        kind=kind,
+        title=title,
+        core_observation=core_observation,
+        audience_question=audience_question,
+        visual_state=visual_state,
+        accent_state=accent_state,
+        ig_line=ig_line
     )
 
-    print("[GPT-IMAGE] Generating image...")
+    print(f"[GPT-IMAGE] Generating {kind} image...")
     response = client.images.generate(
         model="gpt-image-1",
-        prompt=image_prompt,
+        prompt=prompt,
         size="1024x1024",
         n=1
     )
 
     image_data = response.data[0].b64_json
     if not image_data:
-        raise Exception("[GPT-IMAGE] No image data returned")
+        raise Exception(f"[GPT-IMAGE] No image data returned for {kind}")
 
     image_bytes = base64.b64decode(image_data)
 
@@ -223,16 +420,16 @@ def generate_image(title, core_observation):
         tmp.write(image_bytes)
         tmp_path = tmp.name
 
-    print(f"[GPT-IMAGE] Image saved: {tmp_path}")
+    print(f"[GPT-IMAGE] {kind} image saved: {tmp_path}")
     return tmp_path
 
 # ============================================================
-# STEP 4A: Master image — logo only
+# STEP 5: Overlay exact Clarity Lab logo only
 # ============================================================
 
 def overlay_logo(image_path):
-    """Master image for Wix / Facebook: Clarity Lab logo only."""
-    print("[PILLOW] Overlaying logo...")
+    """Overlay exact Clarity Lab logo only. No text overlay."""
+    print("[PILLOW] Overlaying exact logo...")
 
     img = Image.open(image_path).convert("RGBA")
     W, H = img.size
@@ -245,12 +442,14 @@ def overlay_logo(image_path):
 
     try:
         logo = Image.open(logo_path).convert("RGBA")
-        logo_w = int(W * 0.30)
+        logo_w = int(W * 0.22)
         logo_ratio = logo.height / logo.width
         logo_h = int(logo_w * logo_ratio)
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
-        logo_x = int(W * 0.06)
-        logo_y = int(H * 0.06)
+
+        logo_x = int(W * 0.055)
+        logo_y = int(H * 0.055)
+
         overlay.paste(logo, (logo_x, logo_y), logo)
         print(f"[PILLOW] Logo placed — brightness: {brightness:.0f}")
     except Exception as e:
@@ -262,126 +461,25 @@ def overlay_logo(image_path):
         result.save(tmp.name, "JPEG", quality=95)
         branded_path = tmp.name
 
-    print(f"[PILLOW] Master image saved: {branded_path}")
+    print(f"[PILLOW] Logo image saved: {branded_path}")
     return branded_path
 
 # ============================================================
-# STEP 4B: Instagram image — logo + elegant text
+# STEP 6: Upload to Cloudinary
 # ============================================================
 
-def overlay_instagram_text(image_path, title, ig_text):
-    """Instagram version: same image, with refined Clarity Lab editorial typography."""
-    print("[PILLOW] Creating Instagram text image...")
-
-    img = Image.open(image_path).convert("RGBA")
-    W, H = img.size
-
-    brightness = get_image_brightness(img)
-    is_dark = brightness < 128
-
-    text_color = (245, 240, 232, 255) if is_dark else (34, 38, 43, 255)
-    soft_color = (230, 224, 214, 230) if is_dark else (74, 78, 82, 225)
-    panel_color = (12, 18, 24, 105) if is_dark else (255, 250, 242, 135)
-
-    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay)
-
-    # Soft editorial panel
-    margin = int(W * 0.07)
-    panel_x1 = margin
-    panel_y1 = int(H * 0.17)
-    panel_x2 = int(W * 0.84)
-    panel_y2 = int(H * 0.78)
-
-    panel = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    panel_draw = ImageDraw.Draw(panel)
-    panel_draw.rounded_rectangle(
-        (panel_x1, panel_y1, panel_x2, panel_y2),
-        radius=28,
-        fill=panel_color
-    )
-    panel = panel.filter(ImageFilter.GaussianBlur(radius=0.4))
-    overlay = Image.alpha_composite(overlay, panel)
-    draw = ImageDraw.Draw(overlay)
-
-    # Logo
-    try:
-        logo_path = LOGO_WHITE if is_dark else LOGO_DARK
-        logo = Image.open(logo_path).convert("RGBA")
-        logo_w = int(W * 0.26)
-        logo_ratio = logo.height / logo.width
-        logo_h = int(logo_w * logo_ratio)
-        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
-        overlay.paste(logo, (margin, int(H * 0.055)), logo)
-    except Exception as e:
-        print(f"[PILLOW] Instagram logo error: {e}")
-
-    title_font = get_font(50, serif=True)
-    body_font = get_font(30, serif=True)
-    small_font = get_font(18, serif=False)
-    label_font = get_font(15, serif=False)
-
-    # Main overlay phrase
-    clean_ig = clean_markdown(ig_text)
-    first_line = clean_ig.split("\n")[0].strip()
-    main_phrase = first_line if len(first_line) <= 90 else title
-
-    max_text_width = panel_x2 - panel_x1 - int(W * 0.10)
-    title_lines = wrap_text_by_width(draw, main_phrase, title_font, max_text_width)
-
-    y = panel_y1 + int(H * 0.09)
-    x = panel_x1 + int(W * 0.055)
-
-    for line in title_lines[:3]:
-        draw.text((x, y), line, font=title_font, fill=text_color)
-        bbox = draw.textbbox((x, y), line, font=title_font)
-        y += (bbox[3] - bbox[1]) + 12
-
-    # Small reflective text from Instagram caption
-    remaining = " ".join(clean_ig.split()[8:28])
-    if remaining:
-        y += 28
-        body_lines = wrap_text_by_width(draw, remaining, body_font, max_text_width)
-        for line in body_lines[:3]:
-            draw.text((x, y), line, font=body_font, fill=soft_color)
-            bbox = draw.textbbox((x, y), line, font=body_font)
-            y += (bbox[3] - bbox[1]) + 10
-
-    # Bottom label
-    bottom_text = "READ THE FULL REFLECTION QUIETLY ON THE SITE."
-    draw.text(
-        (x, panel_y2 - int(H * 0.075)),
-        bottom_text,
-        font=label_font,
-        fill=soft_color,
-        spacing=6
-    )
-
-    result = Image.alpha_composite(img, overlay).convert("RGB")
-
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-        result.save(tmp.name, "JPEG", quality=95)
-        instagram_path = tmp.name
-
-    print(f"[PILLOW] Instagram image saved: {instagram_path}")
-    return instagram_path
-
-# ============================================================
-# STEP 5: Upload to Cloudinary
-# ============================================================
-
-def upload_to_cloudinary(image_path, title):
+def upload_to_cloudinary(image_path, title, variant):
     cloudinary.config(
         cloud_name=CLOUDINARY_CLOUD,
         api_key=CLOUDINARY_KEY,
         api_secret=CLOUDINARY_SECRET
     )
 
-    safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', title)[:60]
+    safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', title)[:55]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    public_id = f"CL_master/CL_{safe_title}_{timestamp}"
+    public_id = f"CL_master/CL_{safe_title}_{variant}_{timestamp}"
 
-    print("[CLOUDINARY] Uploading image...")
+    print(f"[CLOUDINARY] Uploading {variant} image...")
     result = cloudinary.uploader.upload(
         image_path,
         public_id=public_id,
@@ -393,11 +491,11 @@ def upload_to_cloudinary(image_path, title):
     if not secure_url:
         raise Exception("[CLOUDINARY] No URL returned")
 
-    print(f"[CLOUDINARY] Uploaded: {secure_url[:70]}...")
+    print(f"[CLOUDINARY] Uploaded {variant}: {secure_url[:70]}...")
     return secure_url
 
 # ============================================================
-# STEP 6: Import image to Wix Media
+# STEP 7: Import image to Wix Media
 # ============================================================
 
 def import_image_to_wix(cloudinary_url, title, wix_headers):
@@ -432,7 +530,7 @@ def import_image_to_wix(cloudinary_url, title, wix_headers):
     return wix_file_id, wix_url
 
 # ============================================================
-# STEP 7: Publish to Wix Blog
+# STEP 8: Publish to Wix Blog
 # ============================================================
 
 def convert_html_to_ricos(html_content, wix_headers):
@@ -442,10 +540,13 @@ def convert_html_to_ricos(html_content, wix_headers):
         headers=wix_headers,
         json={"html": html_content}
     )
+
     data = check_response(response, "WIX RICOS")
     rich_content = data.get("document")
+
     if not rich_content:
         raise Exception("[WIX RICOS] No document in response")
+
     return rich_content
 
 def publish_to_wix(title, website_text, cloudinary_url):
@@ -462,6 +563,18 @@ def publish_to_wix(title, website_text, cloudinary_url):
     clean_text = clean_markdown(website_text)
     excerpt = " ".join(clean_text.split()[:40]) + "..."
 
+    media_block = {
+        "displayed": True,
+        "custom": True
+    }
+
+    if wix_file_id:
+        media_block["wixMedia"] = {
+            "image": {
+                "id": wix_file_id
+            }
+        }
+
     print("[WIX] Creating draft post...")
     draft_response = requests.post(
         "https://www.wixapis.com/blog/v3/draft-posts",
@@ -471,17 +584,15 @@ def publish_to_wix(title, website_text, cloudinary_url):
                 "title": title,
                 "excerpt": excerpt,
                 "richContent": rich_content,
-                "media": {
-                    "wixMedia": {
-                        "image": {
-                            "id": wix_file_id
-                        }
-                    },
-                    "displayed": True,
-                    "custom": True
-                },
+                "media": media_block,
                 "featured": False,
-                "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"],
+                "hashtags": [
+                    "clarity",
+                    "reflection",
+                    "selfawareness",
+                    "InnerOS",
+                    "mindfulness"
+                ],
                 "memberId": "4d7e0085-753e-4aee-b7c6-ed66431fd9c6"
             }
         }
@@ -511,19 +622,26 @@ def publish_to_wix(title, website_text, cloudinary_url):
 
     slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
     post_url = f"https://www.inneros.online/post/{slug}"
+
     print(f"[WIX] Published: {post_url}")
     return post_url
 
 # ============================================================
-# STEP 8: Publish to Instagram
+# STEP 9: Publish to Instagram
 # ============================================================
 
 def publish_to_instagram(caption, image_url):
     print("[INSTAGRAM] Creating container...")
+
     container_response = requests.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media",
-        data={"image_url": image_url, "caption": caption, "access_token": IG_TOKEN}
+        data={
+            "image_url": image_url,
+            "caption": caption,
+            "access_token": IG_TOKEN
+        }
     )
+
     container = container_response.json()
 
     if "error" in container:
@@ -532,13 +650,18 @@ def publish_to_instagram(caption, image_url):
         raise Exception(f"[INSTAGRAM] Unexpected: {container}")
 
     container_id = container["id"]
+
     print(f"[INSTAGRAM] Container: {container_id}, waiting 5s...")
     time.sleep(5)
 
     publish_response = requests.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media_publish",
-        data={"creation_id": container_id, "access_token": IG_TOKEN}
+        data={
+            "creation_id": container_id,
+            "access_token": IG_TOKEN
+        }
     )
+
     result = publish_response.json()
 
     if "error" in result:
@@ -550,15 +673,21 @@ def publish_to_instagram(caption, image_url):
     return result["id"]
 
 # ============================================================
-# STEP 9: Publish to Facebook
+# STEP 10: Publish to Facebook
 # ============================================================
 
 def publish_to_facebook(message, image_url):
     print("[FACEBOOK] Publishing...")
+
     response = requests.post(
         f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos",
-        data={"url": image_url, "message": message, "access_token": FB_PAGE_TOKEN}
+        data={
+            "url": image_url,
+            "message": message,
+            "access_token": FB_PAGE_TOKEN
+        }
     )
+
     result = response.json()
 
     if "error" in result:
@@ -575,33 +704,73 @@ def publish_to_facebook(message, image_url):
 
 def run_pipeline():
     print(f"\n{'='*60}")
-    print(f"Clarity Lab Pipeline — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"Clarity Lab Pipeline v9 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
     index, rows, topic = get_next_topic()
 
+    visual_state = get_visual_state(index)
+    accent_state = get_accent_state(index)
+
+    print(f"[VISUAL] State: {visual_state['name']}")
+    print(f"[VISUAL] Accent: {accent_state}")
+
     content = generate_content(topic)
+
     title   = content["title"]
     ig_text = content["instagram"]
     website = content["website"]
 
-    raw_image_path = generate_image(title, topic["Core Observation"])
+    core_observation = topic["Core Observation"]
+    audience_question = topic["Audience Question"]
+    ig_line = get_instagram_short_line(ig_text, title)
 
-    master_image_path = overlay_logo(raw_image_path)
-    master_url = upload_to_cloudinary(master_image_path, title)
+    website_raw = generate_visual_image(
+        kind="website",
+        title=title,
+        core_observation=core_observation,
+        audience_question=audience_question,
+        visual_state=visual_state,
+        accent_state=accent_state,
+        ig_line=ig_line
+    )
+    website_image = overlay_logo(website_raw)
+    website_url = upload_to_cloudinary(website_image, title, "website")
 
-    instagram_image_path = overlay_instagram_text(raw_image_path, title, ig_text)
-    instagram_url = upload_to_cloudinary(instagram_image_path, title + "_instagram")
+    instagram_raw = generate_visual_image(
+        kind="instagram",
+        title=title,
+        core_observation=core_observation,
+        audience_question=audience_question,
+        visual_state=visual_state,
+        accent_state=accent_state,
+        ig_line=ig_line
+    )
+    instagram_image = overlay_logo(instagram_raw)
+    instagram_url = upload_to_cloudinary(instagram_image, title, "instagram")
 
-    post_url = publish_to_wix(title, website, master_url)
+    facebook_raw = generate_visual_image(
+        kind="facebook",
+        title=title,
+        core_observation=core_observation,
+        audience_question=audience_question,
+        visual_state=visual_state,
+        accent_state=accent_state,
+        ig_line=ig_line
+    )
+    facebook_image = overlay_logo(facebook_raw)
+    facebook_url = upload_to_cloudinary(facebook_image, title, "facebook")
+
+    post_url = publish_to_wix(title, website, website_url)
 
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
+
     ig_caption = f"{ig_text}\n\nRead the full article → link in bio\n\n{hashtags}"
     publish_to_instagram(ig_caption, instagram_url)
 
     fb_text = ig_text[:500] if len(ig_text) > 500 else ig_text
     fb_message = f"{fb_text}\n\nRead the full article → {post_url}"
-    publish_to_facebook(fb_message, master_url)
+    publish_to_facebook(fb_message, facebook_url)
 
     mark_topic_published(index, rows, post_url)
 
