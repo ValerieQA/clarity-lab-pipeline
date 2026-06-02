@@ -1,15 +1,13 @@
 """
-Clarity Lab — Automated Content Pipeline v9
+Clarity Lab — Automated Content Pipeline v10
 
-Visual architecture:
-- 3 separate GPT images per post:
-  1. Website cover
-  2. Instagram editorial cover
-  3. Facebook image
-- No text overlay via Pillow
-- Pillow is used only for exact Clarity Lab logo placement
-- Visuals are topic-oriented first, palette-oriented second
-- Uses Clarity Lab visual tone journey
+Fixes:
+- One master image per article for Website, Instagram, and Facebook
+- No separate scenes per platform
+- No GPT-generated logos or brand marks
+- Exact Clarity Lab logo added only via Pillow
+- Light-first Clarity Lab visual tone
+- Topic-oriented image generation with visual journey palette
 """
 
 import os
@@ -102,9 +100,9 @@ VISUAL_JOURNEY = [
         "palette": "dusty blue, slate blue, cream, soft grey, muted navy"
     },
     {
-        "name": "Deep Evening",
-        "mood": "reflection, inner knowing, quiet depth",
-        "palette": "deep navy, blue-black, warm cream, muted gold, soft shadow"
+        "name": "Deep Evening Light",
+        "mood": "reflection, quiet depth, but still soft and open",
+        "palette": "soft navy accents, dusty blue, warm cream, muted gold, gentle shadow"
     },
     {
         "name": "Twilight",
@@ -163,14 +161,6 @@ def get_accent_state(index):
     if index % 3 == 0:
         return ACCENT_STATES[index % len(ACCENT_STATES)]
     return "no strong accent, only subtle natural variation"
-
-def get_instagram_short_line(ig_text, title):
-    clean = clean_markdown(ig_text)
-    lines = [line.strip() for line in clean.split("\n") if line.strip()]
-    for line in lines:
-        if "Read the full reflection" not in line and len(line) <= 90:
-            return line
-    return title
 
 # ============================================================
 # STEP 1: Pick next topic
@@ -258,12 +248,15 @@ def parse_content(raw_text):
     return sections
 
 # ============================================================
-# STEP 3: Generate visual prompts
+# STEP 3: Build master image prompt
 # ============================================================
 
-def build_visual_prompt(kind, title, core_observation, audience_question, visual_state, accent_state, ig_line=None):
-    base = f"""
-Clarity Lab visual system.
+def build_master_image_prompt(title, core_observation, audience_question, visual_state, accent_state):
+    return f"""
+Create one master image for a Clarity Lab reflection.
+
+This image will be used across Website, Instagram, and Facebook.
+It must be one coherent visual world.
 
 Article title:
 "{title}"
@@ -307,102 +300,64 @@ Avoid repeating visual compositions from recent posts.
 The feed should feel like one evolving visual conversation.
 
 Overall style:
-calm, editorial, high-end magazine quality,
-quiet luxury, human, reflective, spacious,
-soft natural light, thoughtful shadows,
+calm editorial photography,
+high-end magazine quality,
+quiet luxury,
+human,
+reflective,
+spacious,
+light-filled atmosphere,
+soft natural light,
+subtle shadows,
+airy composition,
 Clarity Lab atmosphere,
-non-marketing, non-corporate, non-performative.
-"""
+non-marketing,
+non-corporate,
+non-performative.
 
-    if kind == "website":
-        return base + """
-Create a WEBSITE BLOG COVER IMAGE.
+Color rule:
+Light-first palette.
+Favor brightness over darkness.
+Favor openness over drama.
+Use dark tones only as subtle shadows or depth accents.
+Avoid dramatic contrast.
+Avoid heavy dark backgrounds.
+Avoid cinematic color grading.
+Avoid overly saturated colors.
+
+Branding rule:
+Do not generate any logo.
+Do not draw Clarity Lab logo.
+Do not place brand marks.
+Do not include text.
+Do not include typography.
+Do not include fake letters.
+Logo will be added later.
 
 Format:
 Square 1024x1024.
 
 Composition:
-clean editorial photograph,
-no article title text,
-no quote text,
-no captions,
-leave quiet negative space in the upper-left area for a small Clarity Lab logo overlay.
-
-The image should work as a calm website cover.
+Leave quiet negative space in the upper-left area for a small Clarity Lab logo overlay.
+The image should work cleanly as a website cover, Instagram post, and Facebook image.
 """
-
-    if kind == "facebook":
-        return base + """
-Create a FACEBOOK POST IMAGE.
-
-Format:
-Square 1024x1024.
-
-Composition:
-editorial feature image,
-no article title text,
-no quote text,
-no captions,
-leave quiet negative space in the upper-left area for a small Clarity Lab logo overlay.
-
-The image should feel related to the website image but not identical.
-"""
-
-    if kind == "instagram":
-        return base + f"""
-Create an INSTAGRAM EDITORIAL COVER.
-
-Format:
-Square 1024x1024.
-
-This image may include integrated editorial typography as part of the design.
-
-Use this exact title text if typography appears:
-"{title}"
-
-Optional short supporting line:
-"{ig_line}"
-
-Typography direction:
-elegant serif editorial typography,
-quiet magazine cover design,
-not motivational poster,
-not social media template,
-not loud,
-not crowded.
-
-Important:
-Typography must feel naturally designed into the composition.
-Leave intentional negative space.
-Leave clean negative space in the upper-left area for a small Clarity Lab logo overlay.
-Do not place large text over the upper-left logo area.
-Do not add hashtags.
-Do not add fake UI elements.
-Do not add extra words beyond the title and optional short supporting line.
-
-The Instagram cover should feel like a refined reflective magazine page.
-"""
-
-    raise ValueError(f"Unknown image kind: {kind}")
 
 # ============================================================
-# STEP 4: Generate image via GPT Image
+# STEP 4: Generate master image
 # ============================================================
 
-def generate_visual_image(kind, title, core_observation, audience_question, visual_state, accent_state, ig_line=None):
+def generate_master_image(title, core_observation, audience_question, visual_state, accent_state):
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    prompt = build_visual_prompt(
-        kind=kind,
+    prompt = build_master_image_prompt(
         title=title,
         core_observation=core_observation,
         audience_question=audience_question,
         visual_state=visual_state,
-        accent_state=accent_state,
-        ig_line=ig_line
+        accent_state=accent_state
     )
 
-    print(f"[GPT-IMAGE] Generating {kind} image...")
+    print("[GPT-IMAGE] Generating one master image...")
     response = client.images.generate(
         model="gpt-image-1",
         prompt=prompt,
@@ -412,7 +367,7 @@ def generate_visual_image(kind, title, core_observation, audience_question, visu
 
     image_data = response.data[0].b64_json
     if not image_data:
-        raise Exception(f"[GPT-IMAGE] No image data returned for {kind}")
+        raise Exception("[GPT-IMAGE] No image data returned")
 
     image_bytes = base64.b64decode(image_data)
 
@@ -420,7 +375,7 @@ def generate_visual_image(kind, title, core_observation, audience_question, visu
         tmp.write(image_bytes)
         tmp_path = tmp.name
 
-    print(f"[GPT-IMAGE] {kind} image saved: {tmp_path}")
+    print(f"[GPT-IMAGE] Master image saved: {tmp_path}")
     return tmp_path
 
 # ============================================================
@@ -428,7 +383,6 @@ def generate_visual_image(kind, title, core_observation, audience_question, visu
 # ============================================================
 
 def overlay_logo(image_path):
-    """Overlay exact Clarity Lab logo only. No text overlay."""
     print("[PILLOW] Overlaying exact logo...")
 
     img = Image.open(image_path).convert("RGBA")
@@ -442,9 +396,11 @@ def overlay_logo(image_path):
 
     try:
         logo = Image.open(logo_path).convert("RGBA")
-        logo_w = int(W * 0.22)
+
+        logo_w = int(W * 0.20)
         logo_ratio = logo.height / logo.width
         logo_h = int(logo_w * logo_ratio)
+
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
 
         logo_x = int(W * 0.055)
@@ -461,7 +417,7 @@ def overlay_logo(image_path):
         result.save(tmp.name, "JPEG", quality=95)
         branded_path = tmp.name
 
-    print(f"[PILLOW] Logo image saved: {branded_path}")
+    print(f"[PILLOW] Branded master image saved: {branded_path}")
     return branded_path
 
 # ============================================================
@@ -535,6 +491,7 @@ def import_image_to_wix(cloudinary_url, title, wix_headers):
 
 def convert_html_to_ricos(html_content, wix_headers):
     print("[WIX] Converting to Ricos...")
+
     response = requests.post(
         "https://www.wixapis.com/ricos/v1/ricos-document/convert/to-ricos",
         headers=wix_headers,
@@ -576,6 +533,7 @@ def publish_to_wix(title, website_text, cloudinary_url):
         }
 
     print("[WIX] Creating draft post...")
+
     draft_response = requests.post(
         "https://www.wixapis.com/blog/v3/draft-posts",
         headers=wix_headers,
@@ -610,14 +568,17 @@ def publish_to_wix(title, website_text, cloudinary_url):
         f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}",
         headers=wix_headers
     )
+
     check_response(verify_response, "WIX VERIFY DRAFT")
     print("[WIX] Draft verified OK")
 
     print("[WIX] Publishing...")
+
     publish_response = requests.post(
         f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}/publish",
         headers=wix_headers
     )
+
     check_response(publish_response, "WIX PUBLISH")
 
     slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
@@ -704,7 +665,7 @@ def publish_to_facebook(message, image_url):
 
 def run_pipeline():
     print(f"\n{'='*60}")
-    print(f"Clarity Lab Pipeline v9 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"Clarity Lab Pipeline v10 — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
     index, rows, topic = get_next_topic()
@@ -723,54 +684,29 @@ def run_pipeline():
 
     core_observation = topic["Core Observation"]
     audience_question = topic["Audience Question"]
-    ig_line = get_instagram_short_line(ig_text, title)
 
-    website_raw = generate_visual_image(
-        kind="website",
+    master_raw = generate_master_image(
         title=title,
         core_observation=core_observation,
         audience_question=audience_question,
         visual_state=visual_state,
-        accent_state=accent_state,
-        ig_line=ig_line
+        accent_state=accent_state
     )
-    website_image = overlay_logo(website_raw)
-    website_url = upload_to_cloudinary(website_image, title, "website")
 
-    instagram_raw = generate_visual_image(
-        kind="instagram",
-        title=title,
-        core_observation=core_observation,
-        audience_question=audience_question,
-        visual_state=visual_state,
-        accent_state=accent_state,
-        ig_line=ig_line
-    )
-    instagram_image = overlay_logo(instagram_raw)
-    instagram_url = upload_to_cloudinary(instagram_image, title, "instagram")
+    branded_master = overlay_logo(master_raw)
 
-    facebook_raw = generate_visual_image(
-        kind="facebook",
-        title=title,
-        core_observation=core_observation,
-        audience_question=audience_question,
-        visual_state=visual_state,
-        accent_state=accent_state,
-        ig_line=ig_line
-    )
-    facebook_image = overlay_logo(facebook_raw)
-    facebook_url = upload_to_cloudinary(facebook_image, title, "facebook")
+    master_url = upload_to_cloudinary(branded_master, title, "master")
 
-    post_url = publish_to_wix(title, website, website_url)
+    post_url = publish_to_wix(title, website, master_url)
 
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
 
     ig_caption = f"{ig_text}\n\nRead the full article → link in bio\n\n{hashtags}"
-    publish_to_instagram(ig_caption, instagram_url)
+    publish_to_instagram(ig_caption, master_url)
 
     fb_text = ig_text[:500] if len(ig_text) > 500 else ig_text
     fb_message = f"{fb_text}\n\nRead the full article → {post_url}"
-    publish_to_facebook(fb_message, facebook_url)
+    publish_to_facebook(fb_message, master_url)
 
     mark_topic_published(index, rows, post_url)
 
