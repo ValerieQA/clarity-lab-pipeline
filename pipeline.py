@@ -435,8 +435,8 @@ def overlay_logo(image_path):
         logo_h = int(logo_w * logo_ratio)
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
 
-        logo_x = int(width * 0.10)
-        logo_y = int(height * 0.11)
+        logo_x = int(W * 0.10)
+        logo_y = int(H * 0.11)
 
         overlay.paste(logo, (logo_x, logo_y), logo)
         print(f"[PILLOW] Logo placed — local brightness: {local_brightness:.0f}")
