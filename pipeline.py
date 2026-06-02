@@ -249,12 +249,12 @@ def overlay_branding(image_path, title, instagram_text):
         print(f"[PILLOW] Logo error: {e}")
 
     # --- QUOTE TEXT (center) ---
-    quote = extract_quote(instagram_text)
+    quote = title
     if quote:
         try:
             # Try system fonts in order
             font = None
-            font_size = int(W * 0.055)
+            font_size = int(W * 0.043)
             for font_name in [
                 "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
                 "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
@@ -269,7 +269,7 @@ def overlay_branding(image_path, title, instagram_text):
                 font = ImageFont.load_default()
 
             # Wrap text
-            max_chars = 28
+            max_chars = 26
             wrapped = textwrap.fill(quote, width=max_chars)
             lines = wrapped.split("\n")
 
@@ -310,7 +310,7 @@ def overlay_branding(image_path, title, instagram_text):
         if small_font is None:
             small_font = ImageFont.load_default()
 
-        bottom_text = "REFLECTIONS   QUIETLY ON THE SITE."
+        bottom_text = "MORE REFLECTIONS LIVE ON THE SITE."
         bbox = draw.textbbox((0, 0), bottom_text, font=small_font)
         bw = bbox[2] - bbox[0]
         bx = (W - bw) // 2
@@ -433,7 +433,8 @@ def publish_to_wix(title, website_text, cloudinary_url):
                 "title": title,
                 "excerpt": excerpt,
                 "richContent": rich_content,
-                "coverMedia": cover_media,
+                "media": cover_media,
+                "heroImage": cover_media["image"],
                 "featured": False,
                 "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"],
                 "memberId": "4d7e0085-753e-4aee-b7c6-ed66431fd9c6"
