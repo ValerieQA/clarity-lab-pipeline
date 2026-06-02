@@ -323,12 +323,6 @@ def publish_to_wix(title, website_text, cloudinary_url):
     # Import image to Wix Media
     wix_file_id, wix_url = import_image_to_wix(cloudinary_url, title, wix_headers)
 
-    # Build heroImage
-    if wix_file_id:
-        hero_image = {"id": wix_file_id, "url": wix_url}
-    else:
-        hero_image = {"url": cloudinary_url}
-
     # Convert content
     html_content = text_to_html(website_text)
     rich_content = convert_html_to_ricos(html_content, wix_headers)
@@ -345,10 +339,14 @@ def publish_to_wix(title, website_text, cloudinary_url):
                 "title": title,
                 "excerpt": excerpt,
                 "richContent": rich_content,
-                "heroImage": hero_image,
                 "media": {
+                    "wixMedia": {
+                        "image": {
+                            "id": wix_file_id
+                        }
+                    },
                     "displayed": True,
-                    "custom": False
+                    "custom": True
                 },
                 "featured": False,
                 "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"],
