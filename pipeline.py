@@ -1,10 +1,9 @@
 """
-Clarity Lab — Automated Content Pipeline v7 (Final)
-Fixes:
-- media.displayed = True for Wix cover image
-- heroImage with correct Wix file ID
-- Logo only overlay (no text) via Pillow
-- All status checks
+Clarity Lab — Automated Content Pipeline v8
+Updates:
+- Removed image prompt bans: people, text, logos are no longer forbidden
+- Keeps one master image for Wix / Facebook
+- Creates a separate Instagram image with elegant Clarity Lab text overlay
 """
 
 import os
@@ -13,10 +12,11 @@ import re
 import time
 import base64
 import tempfile
+import textwrap
 import requests
 from datetime import datetime
 from openai import OpenAI
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import numpy as np
 import cloudinary
 import cloudinary.uploader
@@ -70,6 +70,38 @@ def get_image_brightness(img):
     arr = np.array(gray)
     return float(arr.mean())
 
+def get_font(size, serif=False):
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf" if serif else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf" if serif else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    ]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+def wrap_text_by_width(draw, text, font, max_width):
+    words = clean_markdown(text).replace("\n", " ").split()
+    lines = []
+    current = ""
+
+    for word in words:
+        test = f"{current} {word}".strip()
+        bbox = draw.textbbox((0, 0), test, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            current = word
+
+    if current:
+        lines.append(current)
+
+    return lines
+
 # ============================================================
 # STEP 1: Pick next topic
 # ============================================================
@@ -100,7 +132,7 @@ def mark_topic_published(index, rows, post_url):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-    print(f"[TOPICS] Status updated to Published")
+    print("[TOPICS] Status updated to Published")
 
 # ============================================================
 # STEP 2: Generate content via GPT
@@ -140,6 +172,7 @@ def parse_content(raw_text):
         "website":   r"===WEBSITE===\s*(.*?)(?====|\Z)",
         "geo":       r"===GEO===\s*(.*?)(?====|\Z)",
     }
+
     sections = {}
     for key, pattern in patterns.items():
         match = re.search(pattern, raw_text, re.DOTALL)
@@ -163,12 +196,12 @@ def generate_image(title, core_observation):
     image_prompt = (
         f'Calm, minimal, atmospheric photograph-style image '
         f'for a reflective article titled "{title}". '
+        f'Core idea: "{core_observation}". '
         f'Style: warm coffee tones, soft blues, muted beige and cream palette. '
         f'Soft natural light, shadows, minimal composition. '
-        f'Abstract or still life: books, stones, ceramics, plants, soft textures. '
-        f'NO people, NO text, NO logos. '
+        f'Abstract editorial atmosphere, still life, interior detail, books, stones, ceramics, plants, soft textures, or quiet human presence if natural. '
         f'Mood: quiet, precise, human, thoughtful. '
-        f'High-end editorial photography for a mindfulness publication. '
+        f'High-end editorial photography for Clarity Lab. '
         f'Square format.'
     )
 
@@ -194,11 +227,11 @@ def generate_image(title, core_observation):
     return tmp_path
 
 # ============================================================
-# STEP 4: Overlay logo only (no text) via Pillow
+# STEP 4A: Master image — logo only
 # ============================================================
 
 def overlay_logo(image_path):
-    """Overlay Clarity Lab logo in top-left corner only. No text."""
+    """Master image for Wix / Facebook: Clarity Lab logo only."""
     print("[PILLOW] Overlaying logo...")
 
     img = Image.open(image_path).convert("RGBA")
@@ -219,7 +252,7 @@ def overlay_logo(image_path):
         logo_x = int(W * 0.06)
         logo_y = int(H * 0.06)
         overlay.paste(logo, (logo_x, logo_y), logo)
-        print(f"[PILLOW] Logo placed — brightness: {brightness:.0f}, using {'white' if is_dark else 'dark'} logo")
+        print(f"[PILLOW] Logo placed — brightness: {brightness:.0f}")
     except Exception as e:
         print(f"[PILLOW] Logo error: {e}")
 
@@ -229,8 +262,109 @@ def overlay_logo(image_path):
         result.save(tmp.name, "JPEG", quality=95)
         branded_path = tmp.name
 
-    print(f"[PILLOW] Branded image saved: {branded_path}")
+    print(f"[PILLOW] Master image saved: {branded_path}")
     return branded_path
+
+# ============================================================
+# STEP 4B: Instagram image — logo + elegant text
+# ============================================================
+
+def overlay_instagram_text(image_path, title, ig_text):
+    """Instagram version: same image, with refined Clarity Lab editorial typography."""
+    print("[PILLOW] Creating Instagram text image...")
+
+    img = Image.open(image_path).convert("RGBA")
+    W, H = img.size
+
+    brightness = get_image_brightness(img)
+    is_dark = brightness < 128
+
+    text_color = (245, 240, 232, 255) if is_dark else (34, 38, 43, 255)
+    soft_color = (230, 224, 214, 230) if is_dark else (74, 78, 82, 225)
+    panel_color = (12, 18, 24, 105) if is_dark else (255, 250, 242, 135)
+
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Soft editorial panel
+    margin = int(W * 0.07)
+    panel_x1 = margin
+    panel_y1 = int(H * 0.17)
+    panel_x2 = int(W * 0.84)
+    panel_y2 = int(H * 0.78)
+
+    panel = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    panel_draw = ImageDraw.Draw(panel)
+    panel_draw.rounded_rectangle(
+        (panel_x1, panel_y1, panel_x2, panel_y2),
+        radius=28,
+        fill=panel_color
+    )
+    panel = panel.filter(ImageFilter.GaussianBlur(radius=0.4))
+    overlay = Image.alpha_composite(overlay, panel)
+    draw = ImageDraw.Draw(overlay)
+
+    # Logo
+    try:
+        logo_path = LOGO_WHITE if is_dark else LOGO_DARK
+        logo = Image.open(logo_path).convert("RGBA")
+        logo_w = int(W * 0.26)
+        logo_ratio = logo.height / logo.width
+        logo_h = int(logo_w * logo_ratio)
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        overlay.paste(logo, (margin, int(H * 0.055)), logo)
+    except Exception as e:
+        print(f"[PILLOW] Instagram logo error: {e}")
+
+    title_font = get_font(50, serif=True)
+    body_font = get_font(30, serif=True)
+    small_font = get_font(18, serif=False)
+    label_font = get_font(15, serif=False)
+
+    # Main overlay phrase
+    clean_ig = clean_markdown(ig_text)
+    first_line = clean_ig.split("\n")[0].strip()
+    main_phrase = first_line if len(first_line) <= 90 else title
+
+    max_text_width = panel_x2 - panel_x1 - int(W * 0.10)
+    title_lines = wrap_text_by_width(draw, main_phrase, title_font, max_text_width)
+
+    y = panel_y1 + int(H * 0.09)
+    x = panel_x1 + int(W * 0.055)
+
+    for line in title_lines[:3]:
+        draw.text((x, y), line, font=title_font, fill=text_color)
+        bbox = draw.textbbox((x, y), line, font=title_font)
+        y += (bbox[3] - bbox[1]) + 12
+
+    # Small reflective text from Instagram caption
+    remaining = " ".join(clean_ig.split()[8:28])
+    if remaining:
+        y += 28
+        body_lines = wrap_text_by_width(draw, remaining, body_font, max_text_width)
+        for line in body_lines[:3]:
+            draw.text((x, y), line, font=body_font, fill=soft_color)
+            bbox = draw.textbbox((x, y), line, font=body_font)
+            y += (bbox[3] - bbox[1]) + 10
+
+    # Bottom label
+    bottom_text = "READ THE FULL REFLECTION QUIETLY ON THE SITE."
+    draw.text(
+        (x, panel_y2 - int(H * 0.075)),
+        bottom_text,
+        font=label_font,
+        fill=soft_color,
+        spacing=6
+    )
+
+    result = Image.alpha_composite(img, overlay).convert("RGB")
+
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        result.save(tmp.name, "JPEG", quality=95)
+        instagram_path = tmp.name
+
+    print(f"[PILLOW] Instagram image saved: {instagram_path}")
+    return instagram_path
 
 # ============================================================
 # STEP 5: Upload to Cloudinary
@@ -243,8 +377,9 @@ def upload_to_cloudinary(image_path, title):
         api_secret=CLOUDINARY_SECRET
     )
 
-    safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', title)[:50]
-    public_id = f"CL_master/CL_{safe_title}"
+    safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', title)[:60]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    public_id = f"CL_master/CL_{safe_title}_{timestamp}"
 
     print("[CLOUDINARY] Uploading image...")
     result = cloudinary.uploader.upload(
@@ -262,7 +397,7 @@ def upload_to_cloudinary(image_path, title):
     return secure_url
 
 # ============================================================
-# STEP 6: Import image to Wix Media — get file ID
+# STEP 6: Import image to Wix Media
 # ============================================================
 
 def import_image_to_wix(cloudinary_url, title, wix_headers):
@@ -292,7 +427,7 @@ def import_image_to_wix(cloudinary_url, title, wix_headers):
     if wix_file_id:
         print(f"[WIX MEDIA] File ID: {wix_file_id}")
     else:
-        print(f"[WIX MEDIA] No file ID, using Cloudinary URL")
+        print("[WIX MEDIA] No file ID, using Cloudinary URL")
 
     return wix_file_id, wix_url
 
@@ -320,16 +455,13 @@ def publish_to_wix(title, website_text, cloudinary_url):
         "Content-Type": "application/json"
     }
 
-    # Import image to Wix Media
     wix_file_id, wix_url = import_image_to_wix(cloudinary_url, title, wix_headers)
 
-    # Convert content
     html_content = text_to_html(website_text)
     rich_content = convert_html_to_ricos(html_content, wix_headers)
     clean_text = clean_markdown(website_text)
     excerpt = " ".join(clean_text.split()[:40]) + "..."
 
-    # Create draft
     print("[WIX] Creating draft post...")
     draft_response = requests.post(
         "https://www.wixapis.com/blog/v3/draft-posts",
@@ -354,13 +486,15 @@ def publish_to_wix(title, website_text, cloudinary_url):
             }
         }
     )
+
     draft_data = check_response(draft_response, "WIX CREATE DRAFT")
     draft_id = draft_data.get("draftPost", {}).get("id")
+
     if not draft_id:
         raise Exception(f"[WIX] No draft ID: {draft_data}")
+
     print(f"[WIX] Draft created: {draft_id}")
 
-    # Verify
     verify_response = requests.get(
         f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}",
         headers=wix_headers
@@ -368,7 +502,6 @@ def publish_to_wix(title, website_text, cloudinary_url):
     check_response(verify_response, "WIX VERIFY DRAFT")
     print("[WIX] Draft verified OK")
 
-    # Publish
     print("[WIX] Publishing...")
     publish_response = requests.post(
         f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}/publish",
@@ -453,18 +586,22 @@ def run_pipeline():
     website = content["website"]
 
     raw_image_path = generate_image(title, topic["Core Observation"])
-    branded_image_path = overlay_logo(raw_image_path)
-    cloudinary_url = upload_to_cloudinary(branded_image_path, title)
 
-    post_url = publish_to_wix(title, website, cloudinary_url)
+    master_image_path = overlay_logo(raw_image_path)
+    master_url = upload_to_cloudinary(master_image_path, title)
+
+    instagram_image_path = overlay_instagram_text(raw_image_path, title, ig_text)
+    instagram_url = upload_to_cloudinary(instagram_image_path, title + "_instagram")
+
+    post_url = publish_to_wix(title, website, master_url)
 
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
     ig_caption = f"{ig_text}\n\nRead the full article → link in bio\n\n{hashtags}"
-    publish_to_instagram(ig_caption, cloudinary_url)
+    publish_to_instagram(ig_caption, instagram_url)
 
     fb_text = ig_text[:500] if len(ig_text) > 500 else ig_text
     fb_message = f"{fb_text}\n\nRead the full article → {post_url}"
-    publish_to_facebook(fb_message, cloudinary_url)
+    publish_to_facebook(fb_message, master_url)
 
     mark_topic_published(index, rows, post_url)
 
