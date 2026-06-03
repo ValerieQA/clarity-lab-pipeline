@@ -464,7 +464,7 @@ def run_pipeline():
     ig_caption = f"{ig_text}\n\nRead the full article → link in bio\n\n{hashtags}"
     publish_to_instagram(ig_caption, cloudinary_url)
 
-    fb_message = f"{ig_text}\n\nRead the full article → {post_url}"
+    fb_message = f"{ig_text}\n\n{post_url}"
     publish_to_facebook(fb_message, cloudinary_url)
 
     mark_topic_published(index, rows, post_url, master_image_url=website_url)
