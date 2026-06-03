@@ -461,7 +461,7 @@ def run_pipeline():
     post_url = publish_to_wix(title, website, cloudinary_url)
 
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
-    ig_caption = f"{ig_text}\n\nRead the full article → link in bio\n\n{hashtags}"
+    ig_caption = f"{ig_text}\n\n{hashtags}"
     publish_to_instagram(ig_caption, cloudinary_url)
 
     fb_message = f"{ig_text}\n\n{post_url}"
