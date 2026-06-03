@@ -81,11 +81,17 @@ def get_next_topic():
         for row in reader:
             rows.append(row)
 
+    published_count = sum(
+        1 for r in rows
+        if r.get("Status", "").strip().lower() == "published"
+    )
+
     for i, row in enumerate(rows):
         status = row.get("Status", "").strip().lower()
         if status in ("ready", ""):
             print(f"[TOPIC] Selected: {row['Topic / Working Title']}")
-            return i, rows, row
+            print(f"[VISUAL] Published count: {published_count}")
+            return i, rows, row, published_count
 
     raise Exception("No topics with status 'Ready' found in topics.csv")
 
