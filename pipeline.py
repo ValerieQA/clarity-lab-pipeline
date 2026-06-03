@@ -163,16 +163,45 @@ def generate_image(title, core_observation):
     client = OpenAI(api_key=OPENAI_API_KEY)
 
     image_prompt = (
-        f'Calm, minimal, atmospheric photograph-style image '
-        f'for a reflective article titled "{title}". '
-        f'Style: warm coffee tones, soft blues, muted beige and cream palette. '
-        f'Soft natural light, shadows, minimal composition. '
-        f'Abstract or still life: books, stones, ceramics, plants, soft textures. '
-        f'NO people, NO text, NO logos. '
-        f'Mood: quiet, precise, human, thoughtful. '
-        f'High-end editorial photography for a mindfulness publication. '
-        f'Square format.'
-    )
+    f'Create a luxury editorial photograph for a reflective article titled "{title}". '
+
+    f'The visual scene must be inspired by the article theme and central idea: '
+    f'"{core_observation}". '
+
+    f'No people. No faces. No silhouettes. No body parts. '
+
+    f'Use symbolic objects, architecture, natural forms, light, shadow, texture, space, '
+    f'and composition to express the article meaning. '
+
+    f'Visual style: high-end editorial photography, luxury magazine aesthetic, '
+    f'calm sophistication, refined minimalism. '
+
+    f'Palette: warm cream, soft stone, muted beige, warm sand, honey clay, '
+    f'soft sage, mist blue, muted terracotta accents. '
+
+    f'Lighting: natural light with strong depth and contrast. '
+    f'Deep shadows are welcome. '
+    f'Do not flatten the image. '
+
+    f'Image quality: crisp, sharp, high-resolution editorial photography. '
+    f'Realistic material textures. '
+    f'Clear edges. '
+    f'Natural optical detail. '
+    f'Professional camera realism. '
+
+    f'Not blurry. '
+    f'Not painterly. '
+    f'Not illustration. '
+    f'Not CGI. '
+    f'Not 3D render. '
+    f'Not AI-smoothed. '
+
+    f'The image should look like a photograph taken with a professional camera, '
+    f'for Architectural Digest, Kinfolk, or a luxury editorial publication. '
+
+    f'Square format.'
+)
+
 
     print("[GPT-IMAGE] Generating image...")
     response = client.images.generate(
