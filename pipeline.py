@@ -482,7 +482,10 @@ def run_pipeline():
     print(f"Clarity Lab Pipeline — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
-    index, rows, topic = get_next_topic()
+    index, rows, topic, visual_index = get_next_topic()
+
+    visual_state = get_visual_state(visual_index)
+    accent_state = get_accent_state(visual_index)
 
     content = generate_content(topic)
     title   = content["title"]
