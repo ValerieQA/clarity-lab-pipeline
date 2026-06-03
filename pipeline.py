@@ -1,10 +1,6 @@
 """
-Clarity Lab — Automated Content Pipeline v7 (Final)
-Fixes:
-- media.displayed = True for Wix cover image
-- heroImage with correct Wix file ID
-- Logo only overlay (no text) via Pillow
-- All status checks
+Clarity Lab — Automated Content Pipeline
+Fixed: visual_index from published_count, removed undefined variables
 """
 
 import os
@@ -40,6 +36,43 @@ TOPICS_FILE        = "topics.csv"
 PROMPT_FILE        = "config/prompt.md"
 LOGO_DARK          = "config/logo_dark.png"
 LOGO_WHITE         = "config/logo_white.png"
+
+# ============================================================
+# VISUAL SYSTEM
+# ============================================================
+
+VISUAL_JOURNEY = [
+    {"name": "Morning Mist",   "mood": "fresh clarity, quiet beginning, soft light",          "palette": "mist blue, pale cream, light stone, soft grey-blue, airy white"},
+    {"name": "Pale Sky",       "mood": "lightness, openness, space to breathe",               "palette": "pale sky blue, cloud white, soft beige, muted horizon blue"},
+    {"name": "Sea Foam",       "mood": "airy calm, subtle movement, emotional spaciousness",  "palette": "sea foam green, blue-grey, soft cream, washed natural tones"},
+    {"name": "Soft Sage",      "mood": "gentle balance, grounded growth, natural quiet",      "palette": "soft sage, muted olive, cream, linen, warm grey"},
+    {"name": "Warm Leaf",      "mood": "natural warmth, subtle energy, living stillness",     "palette": "warm green, muted leaf, beige, soft gold, natural shadow"},
+    {"name": "Sand Dune",      "mood": "comfort, inner stability, warm ground",               "palette": "sand beige, dune cream, pale clay, soft taupe, warm light"},
+    {"name": "Honey Clay",     "mood": "soft warmth, nourishment, human presence",            "palette": "honey beige, clay, cream, warm ochre, muted caramel"},
+    {"name": "Linen Earth",    "mood": "earthy depth, quiet introspection, texture",          "palette": "linen, stone, earth beige, warm grey, muted brown"},
+    {"name": "Dust Rose",      "mood": "transition, softening, emotional nuance",             "palette": "dust rose, muted terracotta, soft beige, pale clay, warm shadow"},
+    {"name": "Dusty Blue",     "mood": "deepening, inner depth, calm concentration",          "palette": "dusty blue, slate blue, cream, soft grey, muted navy"},
+    {"name": "Deep Evening",   "mood": "reflection, quiet depth, elegant shadow",             "palette": "deep navy accents, dusty blue, warm cream, muted gold, soft shadow"},
+    {"name": "Twilight",       "mood": "integration, rest, pause before renewal",             "palette": "twilight blue, mauve-grey, muted lilac, soft peach, dusk cream"},
+    {"name": "Return To Mist", "mood": "renewal, clarity returning, a new cycle",             "palette": "mist blue, pale cream, soft grey-blue, quiet white, distant green"},
+]
+
+ACCENT_STATES = [
+    "muted terracotta",
+    "soft golden hour",
+    "dusty mauve",
+    "muted lilac",
+    "deep olive",
+    "ocean teal",
+]
+
+def get_visual_state(index):
+    return VISUAL_JOURNEY[index % len(VISUAL_JOURNEY)]
+
+def get_accent_state(index):
+    if index % 3 == 0:
+        return ACCENT_STATES[index % len(ACCENT_STATES)]
+    return "no strong accent, only subtle natural variation"
 
 # ============================================================
 # HELPERS
@@ -165,51 +198,27 @@ def parse_content(raw_text):
 # STEP 3: Generate image via gpt-image-1
 # ============================================================
 
-def generate_image(title, core_observation):
+def generate_image(title, core_observation, visual_state, accent_state):
     client = OpenAI(api_key=OPENAI_API_KEY)
 
     image_prompt = (
-    f'Create a luxury editorial photograph for a reflective article titled "{title}". '
+        f'Create a luxury editorial photograph for a reflective article titled "{title}". '
+        f'The visual scene must be inspired by the article theme: "{core_observation}". '
+        f'Visual journey state: {visual_state["name"]}. '
+        f'Mood: {visual_state["mood"]}. '
+        f'Palette direction: {visual_state["palette"]}. '
+        f'Optional accent: {accent_state}. '
+        f'No people. No faces. No silhouettes. No body parts. '
+        f'Use symbolic objects, architecture, natural forms, light, shadow, texture, space. '
+        f'Style: high-end editorial photography, luxury magazine aesthetic, refined minimalism. '
+        f'Lighting: natural light with strong depth and contrast. Deep shadows welcome. '
+        f'Not blurry. Not painterly. Not illustration. Not CGI. '
+        f'Looks like Architectural Digest, Kinfolk, or luxury editorial publication. '
+        f'Square format. '
+        f'No text. No logos. No letters. No symbols.'
+    )
 
-    f'The visual scene must be inspired by the article theme and central idea: '
-    f'"{core_observation}". '
-
-    f'No people. No faces. No silhouettes. No body parts. '
-
-    f'Use symbolic objects, architecture, natural forms, light, shadow, texture, space, '
-    f'and composition to express the article meaning. '
-
-    f'Visual style: high-end editorial photography, luxury magazine aesthetic, '
-    f'calm sophistication, refined minimalism. '
-
-    f'Palette: warm cream, soft stone, muted beige, warm sand, honey clay, '
-    f'soft sage, mist blue, muted terracotta accents. '
-
-    f'Lighting: natural light with strong depth and contrast. '
-    f'Deep shadows are welcome. '
-    f'Do not flatten the image. '
-
-    f'Image quality: crisp, sharp, high-resolution editorial photography. '
-    f'Realistic material textures. '
-    f'Clear edges. '
-    f'Natural optical detail. '
-    f'Professional camera realism. '
-
-    f'Not blurry. '
-    f'Not painterly. '
-    f'Not illustration. '
-    f'Not CGI. '
-    f'Not 3D render. '
-    f'Not AI-smoothed. '
-
-    f'The image should look like a photograph taken with a professional camera, '
-    f'for Architectural Digest, Kinfolk, or a luxury editorial publication. '
-
-    f'Square format.'
-)
-
-
-    print("[GPT-IMAGE] Generating image...")
+    print(f"[GPT-IMAGE] Generating image (visual: {visual_state['name']})...")
     response = client.images.generate(
         model="gpt-image-1",
         prompt=image_prompt,
@@ -235,7 +244,6 @@ def generate_image(title, core_observation):
 # ============================================================
 
 def overlay_logo(image_path):
-    """Overlay Clarity Lab logo in top-left corner only. No text."""
     print("[PILLOW] Overlaying logo...")
 
     img = Image.open(image_path).convert("RGBA")
@@ -299,7 +307,7 @@ def upload_to_cloudinary(image_path, title):
     return secure_url
 
 # ============================================================
-# STEP 6: Import image to Wix Media — get file ID
+# STEP 6: Import image to Wix Media
 # ============================================================
 
 def import_image_to_wix(cloudinary_url, title, wix_headers):
@@ -357,16 +365,13 @@ def publish_to_wix(title, website_text, cloudinary_url):
         "Content-Type": "application/json"
     }
 
-    # Import image to Wix Media
     wix_file_id, wix_url = import_image_to_wix(cloudinary_url, title, wix_headers)
 
-    # Convert content
     html_content = text_to_html(website_text)
     rich_content = convert_html_to_ricos(html_content, wix_headers)
     clean_text = clean_markdown(website_text)
     excerpt = " ".join(clean_text.split()[:40]) + "..."
 
-    # Create draft
     print("[WIX] Creating draft post...")
     draft_response = requests.post(
         "https://www.wixapis.com/blog/v3/draft-posts",
@@ -397,21 +402,16 @@ def publish_to_wix(title, website_text, cloudinary_url):
         raise Exception(f"[WIX] No draft ID: {draft_data}")
     print(f"[WIX] Draft created: {draft_id}")
 
-    # Verify
-    verify_response = requests.get(
-        f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}",
-        headers=wix_headers
+    check_response(
+        requests.get(f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}", headers=wix_headers),
+        "WIX VERIFY DRAFT"
     )
-    check_response(verify_response, "WIX VERIFY DRAFT")
     print("[WIX] Draft verified OK")
 
-    # Publish
-    print("[WIX] Publishing...")
-    publish_response = requests.post(
-        f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}/publish",
-        headers=wix_headers
+    check_response(
+        requests.post(f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}/publish", headers=wix_headers),
+        "WIX PUBLISH"
     )
-    check_response(publish_response, "WIX PUBLISH")
 
     slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
     post_url = f"https://www.inneros.online/post/{slug}"
@@ -439,11 +439,10 @@ def publish_to_instagram(caption, image_url):
     print(f"[INSTAGRAM] Container: {container_id}, waiting 5s...")
     time.sleep(5)
 
-    publish_response = requests.post(
+    result = requests.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media_publish",
         data={"creation_id": container_id, "access_token": IG_TOKEN}
-    )
-    result = publish_response.json()
+    ).json()
 
     if "error" in result:
         raise Exception(f"[INSTAGRAM] Publish error: {result['error']['message']}")
@@ -459,11 +458,10 @@ def publish_to_instagram(caption, image_url):
 
 def publish_to_facebook(message, image_url):
     print("[FACEBOOK] Publishing...")
-    response = requests.post(
+    result = requests.post(
         f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos",
         data={"url": image_url, "message": message, "access_token": FB_PAGE_TOKEN}
-    )
-    result = response.json()
+    ).json()
 
     if "error" in result:
         raise Exception(f"[FACEBOOK] Error: {result['error']['message']}")
@@ -482,30 +480,43 @@ def run_pipeline():
     print(f"Clarity Lab Pipeline — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
 
+    # Step 1: Get topic — visual_index = published_count
     index, rows, topic, visual_index = get_next_topic()
 
     visual_state = get_visual_state(visual_index)
     accent_state = get_accent_state(visual_index)
+    print(f"[VISUAL] {visual_state['name']} / {accent_state}")
 
+    # Step 2: Generate content
     content = generate_content(topic)
     title   = content["title"]
     ig_text = content["instagram"]
     website = content["website"]
 
-    raw_image_path = generate_image(title, topic["Core Observation"])
+    # Step 3: Generate image with visual state
+    raw_image_path = generate_image(title, topic["Core Observation"], visual_state, accent_state)
+
+    # Step 4: Overlay logo
     branded_image_path = overlay_logo(raw_image_path)
+
+    # Step 5: Upload to Cloudinary
     cloudinary_url = upload_to_cloudinary(branded_image_path, title)
 
+    # Step 6-7: Publish to Wix
     post_url = publish_to_wix(title, website, cloudinary_url)
 
+    # Step 8: Instagram
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
     ig_caption = f"{ig_text}\n\n{hashtags}"
     publish_to_instagram(ig_caption, cloudinary_url)
 
-    fb_message = f"{ig_text}\n\n{post_url}"
+    # Step 9: Facebook
+    fb_text = ig_text[:500] if len(ig_text) > 500 else ig_text
+    fb_message = f"{fb_text}\n\n{post_url}"
     publish_to_facebook(fb_message, cloudinary_url)
 
-    mark_topic_published(index, rows, post_url, master_image_url=website_url)
+    # Step 10: Mark published + save Master Image URL
+    mark_topic_published(index, rows, post_url, master_image_url=cloudinary_url)
 
     print(f"\n{'='*60}")
     print(f"✅ Done! {title}")
