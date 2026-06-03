@@ -225,6 +225,29 @@ Avoid explaining the entire insight.
 
 Leave the development for the article.
 
+The Instagram text should end with a soft handoff to the website.
+
+Do not use promotional language.
+
+Avoid:
+
+* Read the full article
+* Learn more
+* Link in bio
+* Click here
+
+Instead, conclude naturally, as a continuation of the reflection.
+
+Examples:
+
+* A reflection on this question continues on the site.
+* We explore this question further on the site.
+* A longer reflection continues on the site.
+* This question remains open on the site.
+
+The handoff should feel like a continuation of thought, not a call to action.
+
+
 ## GEO Requirements
 
 Articles must be structured so that AI systems can understand:
