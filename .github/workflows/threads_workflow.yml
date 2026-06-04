@@ -1,13 +1,32 @@
-name: Clarity Lab — Threads Draft Pipeline
+name: Clarity Lab — Threads Pipeline
 
 on:
   schedule:
-    - cron: '0 10 * * 1,3,5'
-    - cron: '0 14 * * 2,4'
+    - cron: '0 15 * * *'
+    - cron: '0 20 * * *'
+    - cron: '0 1 * * *'
   workflow_dispatch:
     inputs:
       enable_threads_publishing:
         description: 'Publish to Threads? Leave false unless intentionally approved.'
+        required: true
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      threads_require_approval:
+        description: 'Require approval before publishing? Keep true unless bypass is intentional.'
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      collect_comments:
+        description: 'Collect Threads comments instead of generating a post?'
+        required: true
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+      weekly_report:
+        description: 'Generate weekly Threads learning report instead of generating a post?'
         required: true
         default: 'false'
         type: choice
@@ -26,21 +45,37 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Run Threads draft pipeline
+      - name: Run Threads pipeline
         env:
           OPENAI_API_KEY:             ${{ secrets.OPENAI_API_KEY }}
           THREADS_USER_ID:            ${{ secrets.THREADS_USER_ID }}
           THREADS_ACCESS_TOKEN:       ${{ secrets.THREADS_ACCESS_TOKEN }}
           THREADS_TOKEN:              ${{ secrets.THREADS_TOKEN }}
           THREADS_API_VERSION:        v1.0
-          ENABLE_THREADS_PUBLISHING:  ${{ github.event.inputs.enable_threads_publishing || 'false' }}
+          DRY_RUN:                    'false'
+          ENABLE_THREADS_PUBLISHING:  ${{ github.event.inputs.enable_threads_publishing || vars.ENABLE_THREADS_PUBLISHING || 'false' }}
+          THREADS_REQUIRE_APPROVAL:   ${{ github.event.inputs.threads_require_approval || vars.THREADS_REQUIRE_APPROVAL || 'true' }}
+          THREADS_DAILY_POST_LIMIT:   ${{ vars.THREADS_DAILY_POST_LIMIT || '3' }}
+          THREADS_POSTS_PER_RUN:      ${{ vars.THREADS_POSTS_PER_RUN || '1' }}
+          THREADS_SCHEDULE_MODE:      ${{ vars.THREADS_SCHEDULE_MODE || 'spaced' }}
+          ENABLE_THREADS_COMMENT_COLLECTION: ${{ vars.ENABLE_THREADS_COMMENT_COLLECTION || 'false' }}
+          ENABLE_THREADS_AUTO_REPLIES: 'false'
+          ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS: ${{ vars.ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS || 'true' }}
+          ENABLE_AUTO_PROMPT_UPDATES: 'false'
           ENABLE_TOKEN_REFRESH:       'false'
-        run: python threads.py
+        run: |
+          if [ "${{ github.event.inputs.collect_comments || 'false' }}" = "true" ]; then
+            python threads.py --collect-comments
+          elif [ "${{ github.event.inputs.weekly_report || 'false' }}" = "true" ]; then
+            python threads.py --weekly-report
+          else
+            python threads.py
+          fi
 
-      - name: Commit Threads drafts
+      - name: Commit Threads artifacts
         run: |
           git config --global user.name "Clarity Lab Bot"
           git config --global user.email "bot@inneros.online"
-          git add data/threads_posts.csv
-          git diff --staged --quiet || git commit -m "🧵 Threads draft: $(date +'%Y-%m-%d')"
+          git add data/threads_posts.csv data/threads_comments.csv data/prompt_evolution_log.csv data/threads_weekly_reports/ || true
+          git diff --staged --quiet || git commit -m "🧵 Threads update: $(date +'%Y-%m-%d')"
           git push

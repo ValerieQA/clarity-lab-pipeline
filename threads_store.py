@@ -6,7 +6,7 @@ import csv
 import hashlib
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -68,6 +68,46 @@ def append_post(post: dict[str, str], path: Path = THREADS_DB) -> None:
         writer = csv.DictWriter(f, fieldnames=THREADS_FIELDS)
         writer.writerow(row)
 
+
+
+def write_posts(rows: list[dict[str, str]], path: Path = THREADS_DB) -> None:
+    ensure_store(path)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=THREADS_FIELDS)
+        writer.writeheader()
+        for post in rows:
+            writer.writerow({field: post.get(field, "") for field in THREADS_FIELDS})
+
+
+def update_post(post_id: str, updates: dict[str, str], path: Path = THREADS_DB) -> None:
+    rows = read_posts(path)
+    updated = False
+    for row in rows:
+        if row.get("post_id") == post_id:
+            row.update({field: value for field, value in updates.items() if field in THREADS_FIELDS})
+            updated = True
+            break
+    if not updated:
+        raise ValueError(f"Threads post not found: {post_id}")
+    write_posts(rows, path)
+
+
+def published_thread_count_on(day: date | None = None, path: Path = THREADS_DB) -> int:
+    target = day or datetime.now(timezone.utc).date()
+    count = 0
+    for row in read_posts(path):
+        if row.get("status") != "published":
+            continue
+        published_at = row.get("published_at", "")
+        try:
+            published_day = datetime.fromisoformat(published_at.replace("Z", "+00:00")).date()
+        except ValueError:
+            continue
+        if published_day != target:
+            continue
+        external_ids = [item for item in row.get("external_threads_id", "").split(",") if item.strip()]
+        count += max(1, len(external_ids))
+    return count
 
 def create_post_id(source_topic: str, text: str) -> str:
     digest = hashlib.sha256(f"{source_topic}\n{text}".encode("utf-8")).hexdigest()[:16]

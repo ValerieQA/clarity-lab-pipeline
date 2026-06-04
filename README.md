@@ -12,6 +12,14 @@ ENABLE_WIX_PUBLISHING=true
 ENABLE_INSTAGRAM_PUBLISHING=true
 ENABLE_FACEBOOK_PUBLISHING=true
 ENABLE_THREADS_PUBLISHING=false
+THREADS_REQUIRE_APPROVAL=true
+THREADS_DAILY_POST_LIMIT=3
+THREADS_POSTS_PER_RUN=1
+THREADS_SCHEDULE_MODE=spaced
+ENABLE_THREADS_COMMENT_COLLECTION=false
+ENABLE_THREADS_AUTO_REPLIES=false
+ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS=true
+ENABLE_AUTO_PROMPT_UPDATES=false
 ENABLE_TOKEN_REFRESH=false
 ```
 
@@ -45,7 +53,7 @@ The scheduled Threads workflow is draft-first. It writes generated drafts and fu
 data/threads_posts.csv
 ```
 
-Real Threads publishing only happens when `ENABLE_THREADS_PUBLISHING=true` and token validation succeeds.
+Real Threads publishing only happens when `ENABLE_THREADS_PUBLISHING=true`, `THREADS_REQUIRE_APPROVAL=false`, `DRY_RUN=false`, duplicate checks pass, daily/per-run limits allow it, and token validation succeeds. Generated text is saved before any publish attempt; failures are marked safely without crashing the full pipeline.
 
 ## Setup
 
@@ -105,6 +113,18 @@ Validate a Threads token:
 
 ```bash
 python scripts/check_threads_token.py
+```
+
+Collect Threads comments when enabled:
+
+```bash
+ENABLE_THREADS_COMMENT_COLLECTION=true python threads.py --collect-comments
+```
+
+Generate a weekly Threads learning report:
+
+```bash
+python threads.py --weekly-report
 ```
 
 Refresh a long-lived Threads token manually:

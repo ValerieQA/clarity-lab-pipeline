@@ -32,6 +32,10 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def env_positive_int(name: str, default: int, minimum: int = 1) -> int:
+    return max(minimum, env_int(name, default))
+
+
 @dataclass(frozen=True)
 class FeatureFlags:
     dry_run: bool = False
@@ -39,6 +43,14 @@ class FeatureFlags:
     enable_instagram_publishing: bool = True
     enable_facebook_publishing: bool = True
     enable_threads_publishing: bool = False
+    threads_require_approval: bool = True
+    threads_daily_post_limit: int = 3
+    threads_posts_per_run: int = 1
+    threads_schedule_mode: str = "spaced"
+    enable_threads_comment_collection: bool = False
+    enable_threads_auto_replies: bool = False
+    enable_prompt_evolution_recommendations: bool = True
+    enable_auto_prompt_updates: bool = False
     enable_token_refresh: bool = False
     http_max_retries: int = 3
     http_timeout_seconds: int = 30
@@ -51,9 +63,17 @@ class FeatureFlags:
             enable_instagram_publishing=env_bool("ENABLE_INSTAGRAM_PUBLISHING", True),
             enable_facebook_publishing=env_bool("ENABLE_FACEBOOK_PUBLISHING", True),
             enable_threads_publishing=env_bool("ENABLE_THREADS_PUBLISHING", False),
+            threads_require_approval=env_bool("THREADS_REQUIRE_APPROVAL", True),
+            threads_daily_post_limit=env_positive_int("THREADS_DAILY_POST_LIMIT", 3),
+            threads_posts_per_run=env_positive_int("THREADS_POSTS_PER_RUN", 1),
+            threads_schedule_mode=os.getenv("THREADS_SCHEDULE_MODE", "spaced").strip().lower() or "spaced",
+            enable_threads_comment_collection=env_bool("ENABLE_THREADS_COMMENT_COLLECTION", False),
+            enable_threads_auto_replies=env_bool("ENABLE_THREADS_AUTO_REPLIES", False),
+            enable_prompt_evolution_recommendations=env_bool("ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS", True),
+            enable_auto_prompt_updates=env_bool("ENABLE_AUTO_PROMPT_UPDATES", False),
             enable_token_refresh=env_bool("ENABLE_TOKEN_REFRESH", False),
-            http_max_retries=env_int("HTTP_MAX_RETRIES", 3),
-            http_timeout_seconds=env_int("HTTP_TIMEOUT_SECONDS", 30),
+            http_max_retries=env_positive_int("HTTP_MAX_RETRIES", 3),
+            http_timeout_seconds=env_positive_int("HTTP_TIMEOUT_SECONDS", 30),
         )
 
 
