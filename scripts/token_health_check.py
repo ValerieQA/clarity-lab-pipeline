@@ -41,15 +41,17 @@ from runtime_config import FacebookConfig, FeatureFlags, InstagramConfig, Thread
 from scripts.update_github_secret import update_github_secret
 from structured_logging import get_logger
 
-# Tokens expiring within this many days are proactively refreshed.
+# Refresh policy per platform:
+#   Threads:   auto-refresh weekly (API always returns expires_in=None, so refresh unconditionally)
+#   Instagram: never auto-refresh — manual only via scripts/refresh_instagram_token.py
+#   Facebook:  never auto-refresh — Page tokens are non-expiring or must be regenerated manually
 REFRESH_THRESHOLD_DAYS = 14
 REFRESH_THRESHOLD_SECONDS = REFRESH_THRESHOLD_DAYS * 86_400
 
 
-def _needs_refresh(expires_in: int | None) -> bool:
-    """Return True if token expires within the threshold window."""
+def _threads_needs_refresh(expires_in: int | None) -> bool:
+    """Threads API does not return expiry — always refresh on the weekly check."""
     if expires_in is None:
-        # Cannot determine — refresh proactively to be safe.
         return True
     return expires_in < REFRESH_THRESHOLD_SECONDS
 
@@ -67,11 +69,11 @@ def check_threads(flags: FeatureFlags, http: HttpClient) -> int:
     expires_in = result.expires_in
     print(f"[THREADS] Token valid (user={result.username}, expires_in={expires_in}s).")
 
-    if not _needs_refresh(expires_in):
+    if not _threads_needs_refresh(expires_in):
         print(f"[THREADS] Token not due for refresh (>{REFRESH_THRESHOLD_DAYS}d remaining). Done.")
         return 0
 
-    print(f"[THREADS] Token expiring within {REFRESH_THRESHOLD_DAYS} days — refreshing...")
+    print(f"[THREADS] Refreshing token (weekly policy)...")
     refresh_result = refresh_threads_token(config, http, logger)
     if not refresh_result.success:
         print(f"[THREADS] Refresh FAILED: {refresh_result.status} — {refresh_result.error}")
@@ -117,7 +119,7 @@ def check_instagram(flags: FeatureFlags, http: HttpClient) -> int:
     days_left = (expires_in // 86_400) if expires_in is not None else None
     print(f"[INSTAGRAM] Token valid (user={result.username}, expires_in={expires_in}s).")
 
-    if not _needs_refresh(expires_in):
+    if expires_in is not None and expires_in >= REFRESH_THRESHOLD_SECONDS:
         print(f"[INSTAGRAM] Token not due for refresh (>{REFRESH_THRESHOLD_DAYS}d remaining). Done.")
         return 0
 

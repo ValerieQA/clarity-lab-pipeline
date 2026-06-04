@@ -1,5 +1,6 @@
 import tempfile
 from pathlib import Path
+import pytest
 
 from content_validation import ContentValidationError, parse_article_sections, validate_threads_posts
 from runtime_config import FeatureFlags, ThreadsConfig
@@ -54,6 +55,7 @@ def test_duplicate_detection_blocks_obvious_repeat():
 
 
 def test_dry_run_publish_helpers_do_not_call_http(monkeypatch):
+    pytest.importorskip("openai")
     required_env = {
         "OPENAI_API_KEY": "test",
         "CLOUDINARY_CLOUD_NAME": "test",

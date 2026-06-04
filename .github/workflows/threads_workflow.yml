@@ -53,8 +53,8 @@ jobs:
           THREADS_TOKEN:              ${{ secrets.THREADS_TOKEN }}
           THREADS_API_VERSION:        v1.0
           DRY_RUN:                    'false'
-          ENABLE_THREADS_PUBLISHING:  ${{ github.event.inputs.enable_threads_publishing || vars.ENABLE_THREADS_PUBLISHING || 'false' }}
-          THREADS_REQUIRE_APPROVAL:   ${{ github.event.inputs.threads_require_approval || vars.THREADS_REQUIRE_APPROVAL || 'true' }}
+          ENABLE_THREADS_PUBLISHING:  ${{ github.event.inputs.enable_threads_publishing || vars.ENABLE_THREADS_PUBLISHING || 'true' }}
+          THREADS_REQUIRE_APPROVAL:   ${{ github.event.inputs.threads_require_approval || vars.THREADS_REQUIRE_APPROVAL || 'false' }}
           THREADS_DAILY_POST_LIMIT:   ${{ vars.THREADS_DAILY_POST_LIMIT || '3' }}
           THREADS_POSTS_PER_RUN:      ${{ vars.THREADS_POSTS_PER_RUN || '1' }}
           THREADS_SCHEDULE_MODE:      ${{ vars.THREADS_SCHEDULE_MODE || 'spaced' }}

@@ -65,17 +65,12 @@ def main() -> int:
             return 0
         except Exception as exc:
             print(f"ERROR: GitHub Secret update failed: {exc}", file=sys.stderr)
-            print("Falling back to manual update instructions.")
+            return 1
 
-    # Manual fallback when GH_TOKEN_WRITER is not available.
-    print("\nThreads token refresh succeeded.")
-    print("Automatic GitHub Secret update is not available in this environment.")
-    print("Update GitHub Secret THREADS_ACCESS_TOKEN manually with the token below.")
-    print("Do not commit this value to the repository.\n")
-    print(result.access_token)
-    if result.expires_in:
-        print(f"\nExpires in approximately {result.expires_in} seconds.")
-    return 0
+    # GH_TOKEN_WRITER not available — cannot update secret automatically.
+    print("\nERROR: GH_TOKEN_WRITER is not set. Cannot update GitHub Secret automatically.")
+    print("Set GH_TOKEN_WRITER and GH_REPO environment variables and re-run this script.")
+    return 1
 
 
 if __name__ == "__main__":

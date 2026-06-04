@@ -1,38 +1,49 @@
 # Token Management
 
-## Validation
+## Platform refresh policy
 
-Threads publishing validates the token before any real Threads post is created. Validation calls:
+| Platform  | Auto-refresh       | How                                          |
+|-----------|--------------------|----------------------------------------------|
+| Threads   | Weekly (automatic) | `token_check.yml` → `token_health_check.py` updates `THREADS_ACCESS_TOKEN` secret via GitHub API |
+| Instagram | Manual only        | Run `scripts/refresh_instagram_token.py` locally |
+| Facebook  | Never              | Page tokens are non-expiring; regenerate manually in Meta developer portal if needed |
+
+## Weekly token health check
+
+Runs every Monday at 08:00 UTC via `.github/workflows/token_check.yml`.
+
+- **Threads**: validates token, then refreshes and writes new token to `THREADS_ACCESS_TOKEN` GitHub Secret automatically.
+- **Instagram**: validates token. If expiry < 14 days, creates a GitHub Issue: *"⏳ Instagram token expiring soon"*.
+- **Facebook**: validates token. Warns if a Page token unexpectedly has an expiry date.
+
+If any check fails, a GitHub Issue is created with instructions for manual action.
+
+## Validation only (manual)
 
 ```bash
-python scripts/check_threads_token.py
+python scripts/token_health_check.py --platform threads
+python scripts/token_health_check.py --platform instagram
+python scripts/token_health_check.py --platform facebook
 ```
 
-The validator checks that:
-
-1. `THREADS_ACCESS_TOKEN` (or fallback `THREADS_TOKEN`) is present.
-2. `THREADS_USER_ID` is present.
-3. `GET https://graph.threads.net/{THREADS_API_VERSION}/me?fields=id,username` succeeds.
-4. The returned id matches `THREADS_USER_ID`.
-
-The token itself is redacted from structured logs.
-
-## Refresh
-
-Token refresh is intentionally disabled by default. To run it manually:
+## Threads manual refresh
 
 ```bash
-ENABLE_TOKEN_REFRESH=true python scripts/refresh_threads_token.py
+GH_TOKEN_WRITER=<token> GH_REPO=ValerieQA/clarity-lab-pipeline \
+  ENABLE_TOKEN_REFRESH=true python scripts/refresh_threads_token.py
 ```
 
-The script calls:
+Requires `GH_TOKEN_WRITER` with `secrets:write` permission. The script validates the new token before writing it to GitHub Secrets. If `GH_TOKEN_WRITER` is not set, the script exits with an error — raw tokens are never printed to stdout.
 
-```text
-GET https://graph.threads.net/refresh_access_token?grant_type=th_refresh_token&access_token=...
+## Instagram manual refresh
+
+```bash
+GH_TOKEN_WRITER=<token> GH_REPO=ValerieQA/clarity-lab-pipeline \
+  ENABLE_TOKEN_REFRESH=true python scripts/refresh_instagram_token.py
 ```
 
-On success it prints the new token and instructions to update GitHub Secrets manually. It does not modify GitHub Secrets or repository files.
+Same requirements as Threads. Run this when you receive the *"Instagram token expiring soon"* GitHub Issue.
 
 ## Failure behavior
 
-If validation or refresh fails, the scripts print a safe error summary, write structured logs, and exit without changing existing secrets.
+If validation or refresh fails, scripts print a safe error summary, write structured logs, and exit without modifying existing secrets.

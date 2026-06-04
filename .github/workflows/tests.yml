@@ -1,0 +1,33 @@
+name: Clarity Lab — Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          OPENAI_API_KEY:        test
+          CLOUDINARY_CLOUD_NAME: test
+          CLOUDINARY_API_KEY:    test
+          CLOUDINARY_API_SECRET: test
+          WIX_SITE_ID:           test
+          WIX_API_KEY:           test
+          IG_USER_ID:            "123"
+          IG_TOKEN:              test
+          FB_PAGE_ID:            "456"
+          FB_PAGE_TOKEN:         test
+        run: pytest tests/ -v
