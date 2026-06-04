@@ -10,12 +10,19 @@ import time
 import base64
 import tempfile
 import requests
+import logging
 from datetime import datetime
 from openai import OpenAI
 from PIL import Image
 import numpy as np
 import cloudinary
 import cloudinary.uploader
+
+from content_validation import ContentValidationError, parse_article_sections
+from http_utils import HttpClient, response_json_or_raise, summarize_response
+from publication_state import PublicationState, write_topics
+from runtime_config import FeatureFlags
+from structured_logging import get_logger, log_event
 
 # ============================================================
 # CONFIG
@@ -36,6 +43,10 @@ TOPICS_FILE        = "topics.csv"
 PROMPT_FILE        = "config/prompt.md"
 LOGO_DARK          = "config/logo_dark.png"
 LOGO_WHITE         = "config/logo_white.png"
+
+FLAGS = FeatureFlags.from_env()
+LOGGER = get_logger("pipeline")
+HTTP = HttpClient.from_flags(FLAGS, LOGGER)
 
 # ============================================================
 # VISUAL SYSTEM
@@ -79,12 +90,7 @@ def get_accent_state(index):
 # ============================================================
 
 def check_response(response, step_name):
-    if response.status_code not in (200, 201):
-        raise Exception(
-            f"[{step_name}] FAILED — HTTP {response.status_code}\n"
-            f"Response: {response.text[:500]}"
-        )
-    return response.json()
+    return response_json_or_raise(response, step_name)
 
 def clean_markdown(text):
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
@@ -128,20 +134,27 @@ def get_next_topic():
 
     raise Exception("No topics with status 'Ready' found in topics.csv")
 
-def mark_topic_published(index, rows, post_url, master_image_url=""):
-    rows[index]["Status"] = "Published"
+def mark_topic_state(index, rows, post_url, master_image_url, state: PublicationState):
+    final_status = state.finalize().value
+    rows[index]["Pipeline State"] = final_status
+    rows[index]["Workflow Status"] = "Complete" if final_status == "completed" else final_status
+    rows[index]["Status"] = "Published" if final_status == "completed" else "Partial Failure" if final_status == "partial_failure" else rows[index].get("Status", "Ready")
     rows[index]["Website Published URL"] = post_url
-    rows[index]["Publish Status Code"] = "200"
-    rows[index]["Workflow Status"] = "Complete"
+    rows[index]["Publish Status Code"] = "200" if final_status == "completed" else "207" if final_status == "partial_failure" else "500"
     if master_image_url:
         rows[index]["Master Image URL"] = master_image_url
 
-    fieldnames = list(rows[0].keys())
-    with open(TOPICS_FILE, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-    print(f"[TOPICS] Status updated to Published")
+    errors = []
+    for platform, result in state.platform_results.items():
+        rows[index][f"{platform.capitalize()} Status"] = result.status
+        if platform == "threads" and result.external_id:
+            rows[index]["Threads External ID"] = result.external_id
+        if result.error:
+            errors.append(f"{platform}: {result.error[:200]}")
+    rows[index]["Publication Errors"] = " | ".join(errors)
+
+    write_topics(TOPICS_FILE, rows)
+    print(f"[TOPICS] State updated to {final_status}")
 
 # ============================================================
 # STEP 2: Generate content via GPT
@@ -152,7 +165,7 @@ def load_prompt():
         return f.read()
 
 def generate_content(topic_row):
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    client = OpenAI(api_key=OPENAI_API_KEY, max_retries=FLAGS.http_max_retries, timeout=FLAGS.http_timeout_seconds)
     base_prompt = load_prompt()
 
     user_message = (
@@ -162,35 +175,28 @@ def generate_content(topic_row):
         f"Content pillar: {topic_row['Content Pillar']}\n"
     )
 
-    print("[GPT] Generating article content...")
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": base_prompt + "\n\n" + user_message}],
-        max_tokens=2000,
-        temperature=0.7
-    )
+    last_error = None
+    for attempt in range(1, FLAGS.http_max_retries + 1):
+        print(f"[GPT] Generating article content (attempt {attempt})...")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": base_prompt + "\n\n" + user_message}],
+            max_tokens=2000,
+            temperature=0.7
+        )
 
-    raw = response.choices[0].message.content
-    print("[GPT] Content generated successfully")
-    return parse_content(raw)
+        raw = response.choices[0].message.content
+        try:
+            content = parse_content(raw)
+            print("[GPT] Content generated and validated successfully")
+            return content
+        except ContentValidationError as exc:
+            last_error = exc
+            log_event(LOGGER, "article_output_invalid", logging.WARNING, platform="openai", status="retrying", error=str(exc))
+    raise Exception(f"[GPT] Article output remained invalid after retries: {last_error}")
 
 def parse_content(raw_text):
-    patterns = {
-        "title":     r"===TITLE===\s*(.*?)(?====|\Z)",
-        "instagram": r"===INSTAGRAM===\s*(.*?)(?====|\Z)",
-        "website":   r"===WEBSITE===\s*(.*?)(?====|\Z)",
-        "geo":       r"===GEO===\s*(.*?)(?====|\Z)",
-    }
-    sections = {}
-    for key, pattern in patterns.items():
-        match = re.search(pattern, raw_text, re.DOTALL)
-        sections[key] = match.group(1).strip() if match else ""
-
-    if not sections.get("title"):
-        raise Exception("[PARSE] Title is empty")
-    if not sections.get("website"):
-        raise Exception("[PARSE] Website article is empty")
-
+    sections = parse_article_sections(raw_text)
     print(f"[PARSE] Title: {sections['title']}")
     return sections
 
@@ -292,12 +298,30 @@ def upload_to_cloudinary(image_path, title):
     public_id = f"CL_master/CL_{safe_title}"
 
     print("[CLOUDINARY] Uploading image...")
-    result = cloudinary.uploader.upload(
-        image_path,
-        public_id=public_id,
-        overwrite=False,
-        resource_type="image"
-    )
+    if FLAGS.dry_run:
+        planned_url = f"dry-run://cloudinary/{public_id}.jpg"
+        log_event(LOGGER, "dry_run_cloudinary_upload_skipped", platform="cloudinary", status="skipped", details={"public_id": public_id})
+        print(f"[DRY RUN][CLOUDINARY] Would upload image as {public_id}")
+        return planned_url
+
+    last_error = None
+    for attempt in range(1, FLAGS.http_max_retries + 1):
+        try:
+            result = cloudinary.uploader.upload(
+                image_path,
+                public_id=public_id,
+                overwrite=False,
+                resource_type="image"
+            )
+            break
+        except Exception as exc:
+            last_error = exc
+            if attempt >= FLAGS.http_max_retries:
+                raise
+            log_event(LOGGER, "cloudinary_upload_retry", logging.WARNING, platform="cloudinary", status="retrying", error=str(exc))
+            time.sleep(2 ** (attempt - 1))
+    else:
+        raise last_error
 
     secure_url = result.get("secure_url")
     if not secure_url:
@@ -315,8 +339,9 @@ def import_image_to_wix(cloudinary_url, title, wix_headers):
 
     safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', title)[:50]
 
-    response = requests.post(
+    response = HTTP.post(
         "https://www.wixapis.com/site-media/v1/files/import",
+        platform="wix",
         headers=wix_headers,
         json={
             "url": cloudinary_url,
@@ -347,8 +372,9 @@ def import_image_to_wix(cloudinary_url, title, wix_headers):
 
 def convert_html_to_ricos(html_content, wix_headers):
     print("[WIX] Converting to Ricos...")
-    response = requests.post(
+    response = HTTP.post(
         "https://www.wixapis.com/ricos/v1/ricos-document/convert/to-ricos",
+        platform="wix",
         headers=wix_headers,
         json={"html": html_content}
     )
@@ -365,6 +391,12 @@ def publish_to_wix(title, website_text, cloudinary_url):
         "Content-Type": "application/json"
     }
 
+    if FLAGS.dry_run or not FLAGS.enable_wix_publishing:
+        log_event(LOGGER, "wix_publish_skipped", platform="wix", status="skipped", details={"dry_run": FLAGS.dry_run, "enabled": FLAGS.enable_wix_publishing, "title": title})
+        print(f"[DRY RUN][WIX] Would publish article: {title}")
+        slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')
+        return f"dry-run://wix/post/{slug}"
+
     wix_file_id, wix_url = import_image_to_wix(cloudinary_url, title, wix_headers)
 
     html_content = text_to_html(website_text)
@@ -373,8 +405,9 @@ def publish_to_wix(title, website_text, cloudinary_url):
     excerpt = " ".join(clean_text.split()[:40]) + "..."
 
     print("[WIX] Creating draft post...")
-    draft_response = requests.post(
+    draft_response = HTTP.post(
         "https://www.wixapis.com/blog/v3/draft-posts",
+        platform="wix",
         headers=wix_headers,
         json={
             "draftPost": {
@@ -403,13 +436,13 @@ def publish_to_wix(title, website_text, cloudinary_url):
     print(f"[WIX] Draft created: {draft_id}")
 
     check_response(
-        requests.get(f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}", headers=wix_headers),
+        HTTP.get(f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}", platform="wix", headers=wix_headers),
         "WIX VERIFY DRAFT"
     )
     print("[WIX] Draft verified OK")
 
     check_response(
-        requests.post(f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}/publish", headers=wix_headers),
+        HTTP.post(f"https://www.wixapis.com/blog/v3/draft-posts/{draft_id}/publish", platform="wix", headers=wix_headers),
         "WIX PUBLISH"
     )
 
@@ -424,8 +457,14 @@ def publish_to_wix(title, website_text, cloudinary_url):
 
 def publish_to_instagram(caption, image_url):
     print("[INSTAGRAM] Creating container...")
-    container_response = requests.post(
+    if FLAGS.dry_run or not FLAGS.enable_instagram_publishing:
+        log_event(LOGGER, "instagram_publish_skipped", platform="instagram", status="skipped", details={"dry_run": FLAGS.dry_run, "enabled": FLAGS.enable_instagram_publishing, "caption_preview": caption[:160]})
+        print("[DRY RUN][INSTAGRAM] Would publish image post")
+        return "dry-run-instagram-id"
+
+    container_response = HTTP.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media",
+        platform="instagram",
         data={"image_url": image_url, "caption": caption, "access_token": IG_TOKEN}
     )
     container = container_response.json()
@@ -439,8 +478,9 @@ def publish_to_instagram(caption, image_url):
     print(f"[INSTAGRAM] Container: {container_id}, waiting 5s...")
     time.sleep(5)
 
-    result = requests.post(
+    result = HTTP.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media_publish",
+        platform="instagram",
         data={"creation_id": container_id, "access_token": IG_TOKEN}
     ).json()
 
@@ -458,8 +498,14 @@ def publish_to_instagram(caption, image_url):
 
 def publish_to_facebook(message, image_url):
     print("[FACEBOOK] Publishing...")
-    result = requests.post(
+    if FLAGS.dry_run or not FLAGS.enable_facebook_publishing:
+        log_event(LOGGER, "facebook_publish_skipped", platform="facebook", status="skipped", details={"dry_run": FLAGS.dry_run, "enabled": FLAGS.enable_facebook_publishing, "message_preview": message[:160]})
+        print("[DRY RUN][FACEBOOK] Would publish photo post")
+        return "dry-run-facebook-id"
+
+    result = HTTP.post(
         f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos",
+        platform="facebook",
         data={"url": image_url, "message": message, "access_token": FB_PAGE_TOKEN}
     ).json()
 
@@ -479,44 +525,59 @@ def run_pipeline():
     print(f"\n{'='*60}")
     print(f"Clarity Lab Pipeline — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print(f"{'='*60}\n")
+    log_event(LOGGER, "pipeline_started", status="dry_run" if FLAGS.dry_run else "running", details=FLAGS.__dict__)
 
-    # Step 1: Get topic — visual_index = published_count
     index, rows, topic, visual_index = get_next_topic()
+    state = PublicationState(topic_id=topic.get("ID", ""))
 
     visual_state = get_visual_state(visual_index)
     accent_state = get_accent_state(visual_index)
     print(f"[VISUAL] {visual_state['name']} / {accent_state}")
 
-    # Step 2: Generate content
     content = generate_content(topic)
     title   = content["title"]
     ig_text = content["instagram"]
     website = content["website"]
 
-    # Step 3: Generate image with visual state
     raw_image_path = generate_image(title, topic["Core Observation"], visual_state, accent_state)
-
-    # Step 4: Overlay logo
     branded_image_path = overlay_logo(raw_image_path)
 
-    # Step 5: Upload to Cloudinary
     cloudinary_url = upload_to_cloudinary(branded_image_path, title)
 
-    # Step 6-7: Publish to Wix
-    post_url = publish_to_wix(title, website, cloudinary_url)
+    post_url = ""
+    if FLAGS.enable_wix_publishing or FLAGS.dry_run:
+        try:
+            post_url = publish_to_wix(title, website, cloudinary_url)
+            state.set_platform("wix", FLAGS.enable_wix_publishing and not FLAGS.dry_run, "published", url=post_url)
+        except Exception as exc:
+            state.set_platform("wix", FLAGS.enable_wix_publishing and not FLAGS.dry_run, "failed", error=str(exc))
+            log_event(LOGGER, "wix_publish_failed", logging.ERROR, platform="wix", status="failed", error=str(exc))
+    else:
+        state.set_platform("wix", False, "skipped")
 
-    # Step 8: Instagram
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
     ig_caption = f"{ig_text}\n\n{hashtags}"
-    publish_to_instagram(ig_caption, cloudinary_url)
+    try:
+        ig_id = publish_to_instagram(ig_caption, cloudinary_url)
+        state.set_platform("instagram", FLAGS.enable_instagram_publishing and not FLAGS.dry_run, "published", external_id=ig_id)
+    except Exception as exc:
+        state.set_platform("instagram", FLAGS.enable_instagram_publishing and not FLAGS.dry_run, "failed", error=str(exc))
+        log_event(LOGGER, "instagram_publish_failed", logging.ERROR, platform="instagram", status="failed", error=str(exc))
 
-    # Step 9: Facebook
     fb_text = ig_text[:500] if len(ig_text) > 500 else ig_text
     fb_message = f"{fb_text}\n\n{post_url}"
-    publish_to_facebook(fb_message, cloudinary_url)
+    try:
+        fb_id = publish_to_facebook(fb_message, cloudinary_url)
+        state.set_platform("facebook", FLAGS.enable_facebook_publishing and not FLAGS.dry_run, "published", external_id=fb_id)
+    except Exception as exc:
+        state.set_platform("facebook", FLAGS.enable_facebook_publishing and not FLAGS.dry_run, "failed", error=str(exc))
+        log_event(LOGGER, "facebook_publish_failed", logging.ERROR, platform="facebook", status="failed", error=str(exc))
 
-    # Step 10: Mark published + save Master Image URL
-    mark_topic_published(index, rows, post_url, master_image_url=cloudinary_url)
+    state.set_platform("threads", FLAGS.enable_threads_publishing and not FLAGS.dry_run, "skipped")
+    if FLAGS.dry_run:
+        print("[DRY RUN] topics.csv will not be updated")
+    else:
+        mark_topic_state(index, rows, post_url, cloudinary_url, state)
 
     print(f"\n{'='*60}")
     print(f"✅ Done! {title}")

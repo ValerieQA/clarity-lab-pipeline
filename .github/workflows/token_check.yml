@@ -1,0 +1,23 @@
+name: Clarity Lab — Meta Token Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * 1'
+
+jobs:
+  check_threads_token:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Validate Threads token
+        env:
+          THREADS_USER_ID:      ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_TOKEN:        ${{ secrets.THREADS_TOKEN }}
+          THREADS_API_VERSION:  v1.0
+        run: python scripts/check_threads_token.py

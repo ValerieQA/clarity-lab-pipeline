@@ -1,100 +1,131 @@
 # Clarity Lab — Automated Content Pipeline
 
-Automated publishing system: topic → article → image → Wix + Instagram + Facebook
+Automated publishing system: topic → article → image → asset handling → Wix + Instagram + Facebook, with safe draft-first Threads support.
 
-## How it works
+## Production safety defaults
 
-1. Picks the next topic with status `Ready` from `topics.csv`
-2. Generates article + Instagram post via GPT-4o using `config/prompt.md`
-3. Generates image via DALL-E 3
-4. Uploads image to Cloudinary
-5. Publishes article to Wix Blog
-6. Publishes post to Instagram
-7. Publishes post to Facebook
-8. Marks topic as `Published` in `topics.csv`
+The existing production workflow is preserved. New risky behavior is disabled by default:
 
-Runs automatically: **Monday, Wednesday, Friday at 9:00 AM UTC**
-Can also be triggered manually from GitHub Actions tab.
+```env
+DRY_RUN=false
+ENABLE_WIX_PUBLISHING=true
+ENABLE_INSTAGRAM_PUBLISHING=true
+ENABLE_FACEBOOK_PUBLISHING=true
+ENABLE_THREADS_PUBLISHING=false
+ENABLE_TOKEN_REFRESH=false
+```
 
----
+When `DRY_RUN=true`, the pipeline may generate content and planned payloads but skips Wix publishing, Instagram publishing, Facebook publishing, Threads publishing, and irreversible asset uploads.
+
+## How the main pipeline works
+
+1. Picks the next topic with status `Ready` from `topics.csv`.
+2. Generates article + Instagram post via OpenAI using `config/prompt.md`.
+3. Validates the structured AI output before parsing.
+4. Generates and brands an image.
+5. Uploads the image to Cloudinary unless dry-run mode is enabled.
+6. Publishes the article to Wix if enabled.
+7. Publishes to Instagram if enabled.
+8. Publishes to Facebook if enabled.
+9. Records platform-specific publication state in `topics.csv`.
+
+Runs automatically: **Monday, Wednesday, Friday at 9:00 AM UTC**. It can also be triggered manually from the GitHub Actions tab.
+
+## Threads workflow
+
+Threads now uses a separate prompt file:
+
+```text
+config/THREADS_PROMPT.md
+```
+
+The scheduled Threads workflow is draft-first. It writes generated drafts and future discovery-engine fields to:
+
+```text
+data/threads_posts.csv
+```
+
+Real Threads publishing only happens when `ENABLE_THREADS_PUBLISHING=true` and token validation succeeds.
 
 ## Setup
 
-### 1. Fork / clone this repository
+### Required existing GitHub Secrets
 
-### 2. Add GitHub Secrets
+| Secret | Purpose |
+|---|---|
+| `OPENAI_API_KEY` | OpenAI content/image generation |
+| `CLOUDINARY_CLOUD_NAME` | Cloudinary cloud name |
+| `CLOUDINARY_API_KEY` | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | Cloudinary API secret |
+| `WIX_SITE_ID` | Wix site id |
+| `WIX_API_KEY` | Wix API key |
+| `IG_USER_ID` | Instagram Graph API user id |
+| `IG_TOKEN` | Instagram access token |
+| `FB_PAGE_ID` | Facebook page id |
+| `FB_PAGE_TOKEN` | Facebook page token |
 
-Go to: **Settings → Secrets and variables → Actions → New repository secret**
+### Optional/new Threads Secrets
 
-Add these secrets:
+| Secret | Purpose |
+|---|---|
+| `THREADS_ACCESS_TOKEN` | Preferred Threads token |
+| `THREADS_USER_ID` | Expected Threads user id |
+| `THREADS_APP_ID` | Reserved for token tooling |
+| `THREADS_APP_SECRET` | Reserved for token tooling |
 
-| Secret | Value |
-|--------|-------|
-| `OPENAI_API_KEY` | Your OpenAI API key |
-| `CLOUDINARY_CLOUD_NAME` | Your Cloudinary cloud name |
-| `CLOUDINARY_API_KEY` | Your Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | Your Cloudinary API secret |
-| `WIX_SITE_ID` | `d75ea441-48e8-49c2-b157-b4378a4e102c` |
-| `WIX_API_KEY` | Your Wix API key (from Wix dashboard) |
-| `IG_USER_ID` | `17841437840015955` |
-| `IG_TOKEN` | Your Instagram access token |
-| `FB_PAGE_ID` | `1061190690419376` |
-| `FB_PAGE_TOKEN` | Your Facebook Page access token |
+`THREADS_TOKEN` remains supported as a backward-compatible fallback.
 
-### 3. Update topics.csv
+## Running locally
 
-Add your topics with status `Ready`. The pipeline picks them one by one.
+Install dependencies:
 
-### 4. Update config/prompt.md
-
-Edit the brand voice prompt every 2-3 months based on new research.
-This file controls the tone, style, and structure of all articles.
-
----
-
-## File structure
-
-```
-clarity-lab-pipeline/
-├── .github/
-│   └── workflows/
-│       └── schedule.yml     # GitHub Actions schedule
-├── config/
-│   └── prompt.md            # Brand voice + article prompt (edit this)
-├── pipeline.py              # Main pipeline script
-├── topics.csv               # Topic bank (updated after each publish)
-├── requirements.txt         # Python dependencies
-└── README.md
+```bash
+pip install -r requirements.txt
 ```
 
----
+Run the production pipeline:
 
-## Updating the prompt
+```bash
+python pipeline.py
+```
 
-`config/prompt.md` is the brand voice document. Update it when:
-- Strategy changes after quarterly research
-- New content pillars are added
-- Tone or positioning shifts
-- GEO requirements are updated
+Run a dry run:
 
-The pipeline reads this file on every run — no code changes needed.
+```bash
+DRY_RUN=true python pipeline.py
+```
 
----
+Generate a Threads draft:
 
-## Adding new topics
+```bash
+python threads.py
+```
 
-Edit `topics.csv` directly in GitHub or locally. Set `Status` to `Ready`.
-Topics without a status are also picked up as ready.
+Validate a Threads token:
 
----
+```bash
+python scripts/check_threads_token.py
+```
 
-## Manual run
+Refresh a long-lived Threads token manually:
 
-Go to **Actions tab → Clarity Lab Content Pipeline → Run workflow**
+```bash
+ENABLE_TOKEN_REFRESH=true python scripts/refresh_threads_token.py
+```
 
----
+## Documentation
 
-## Tokens expiry
+- Environment variables: `docs/ENVIRONMENT_VARIABLES.md`
+- Token management: `docs/TOKEN_MANAGEMENT.md`
+- Threads setup: `docs/THREADS_SETUP.md`
+- Architecture: `docs/ARCHITECTURE.md`
 
-Instagram and Facebook tokens expire every ~60 days.
-When they expire, regenerate them via Meta Developer Console and update GitHub Secrets.
+## Rollback
+
+To roll back new behavior without reverting code:
+
+1. Keep `ENABLE_THREADS_PUBLISHING=false`.
+2. Keep `ENABLE_TOKEN_REFRESH=false`.
+3. Set `DRY_RUN=false` for normal production publishing.
+4. If needed, disable individual platform flags for safe isolation.
+5. Re-run the existing `schedule.yml` workflow after confirming secrets are present.
