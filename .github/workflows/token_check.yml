@@ -1,23 +1,121 @@
-name: Clarity Lab — Meta Token Check
+name: Clarity Lab — Meta Token Health
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '0 8 * * 1'
+    - cron: '0 8 * * 1'   # Every Monday 08:00 UTC
+  workflow_dispatch:
 
 jobs:
-  check_threads_token:
+  threads:
+    name: Threads Token
     runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.check.outcome }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: Validate Threads token
+
+      - name: Validate and auto-refresh Threads token
+        id: check
         env:
           THREADS_USER_ID:      ${{ secrets.THREADS_USER_ID }}
           THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
           THREADS_TOKEN:        ${{ secrets.THREADS_TOKEN }}
           THREADS_API_VERSION:  v1.0
-        run: python scripts/check_threads_token.py
+          ENABLE_TOKEN_REFRESH: 'true'
+          GH_TOKEN_WRITER:      ${{ secrets.GH_TOKEN_WRITER }}
+          GH_REPO:              ${{ github.repository }}
+        run: python scripts/token_health_check.py --platform threads
+
+  instagram:
+    name: Instagram Token
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.check.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+
+      - name: Validate and auto-refresh Instagram token
+        id: check
+        env:
+          IG_USER_ID:           ${{ secrets.IG_USER_ID }}
+          IG_TOKEN:             ${{ secrets.IG_TOKEN }}
+          ENABLE_TOKEN_REFRESH: 'true'
+          GH_TOKEN_WRITER:      ${{ secrets.GH_TOKEN_WRITER }}
+          GH_REPO:              ${{ github.repository }}
+        run: python scripts/token_health_check.py --platform instagram
+
+  facebook:
+    name: Facebook Token
+    runs-on: ubuntu-latest
+    outputs:
+      status: ${{ steps.check.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+
+      - name: Validate Facebook token
+        id: check
+        env:
+          FB_PAGE_TOKEN:        ${{ secrets.FB_PAGE_TOKEN }}
+          FB_PAGE_ID:           ${{ secrets.FB_PAGE_ID }}
+          FACEBOOK_APP_ID:      ${{ secrets.FACEBOOK_APP_ID }}
+          FACEBOOK_APP_SECRET:  ${{ secrets.FACEBOOK_APP_SECRET }}
+        run: python scripts/token_health_check.py --platform facebook
+
+  alert:
+    name: Alert on failure
+    runs-on: ubuntu-latest
+    needs: [threads, instagram, facebook]
+    if: failure()
+    permissions:
+      issues: write
+    steps:
+      - name: Create alert issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const failed = [];
+            if ('${{ needs.threads.result }}' === 'failure')   failed.push('Threads (THREADS_ACCESS_TOKEN)');
+            if ('${{ needs.instagram.result }}' === 'failure') failed.push('Instagram (IG_TOKEN)');
+            if ('${{ needs.facebook.result }}' === 'failure')  failed.push('Facebook (FB_PAGE_TOKEN)');
+
+            const platformList = failed.map(p => `- ${p}`).join('\n');
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ Meta token health check failed — manual action required`,
+              body: [
+                '## Token health check failed',
+                '',
+                'One or more Meta platform tokens are **invalid, expired, or could not be refreshed automatically**.',
+                '',
+                '### Affected platforms',
+                platformList,
+                '',
+                '### Required action',
+                '1. Re-authenticate manually via the Meta developer portal.',
+                '2. Generate a new long-lived token for each affected platform.',
+                '3. Update the corresponding GitHub Secret.',
+                '4. Re-run the [token health check workflow](' + runUrl + ') to confirm.',
+                '',
+                '### Workflow run',
+                runUrl,
+                '',
+                '> This issue was created automatically by the Meta Token Health workflow.',
+              ].join('\n'),
+              labels: ['token-alert', 'automated'],
+              assignees: [],
+            });

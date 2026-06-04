@@ -21,7 +21,8 @@ import cloudinary.uploader
 from content_validation import ContentValidationError, parse_article_sections
 from http_utils import HttpClient, response_json_or_raise, summarize_response
 from publication_state import PublicationState, write_topics
-from runtime_config import FeatureFlags
+from meta_tokens import validate_facebook_token, validate_instagram_token
+from runtime_config import FacebookConfig, FeatureFlags, InstagramConfig
 from structured_logging import get_logger, log_event
 
 # ============================================================
@@ -47,6 +48,8 @@ LOGO_WHITE         = "config/logo_white.png"
 FLAGS = FeatureFlags.from_env()
 LOGGER = get_logger("pipeline")
 HTTP = HttpClient.from_flags(FLAGS, LOGGER)
+INSTAGRAM_CONFIG = InstagramConfig.from_env()
+FACEBOOK_CONFIG = FacebookConfig.from_env()
 
 # ============================================================
 # VISUAL SYSTEM
@@ -462,6 +465,13 @@ def publish_to_instagram(caption, image_url):
         print("[DRY RUN][INSTAGRAM] Would publish image post")
         return "dry-run-instagram-id"
 
+    # Pre-publish token validation — skip platform rather than fail entire pipeline.
+    _ig_check = validate_instagram_token(INSTAGRAM_CONFIG, HTTP, LOGGER)
+    if not _ig_check.valid:
+        log_event(LOGGER, "instagram_token_invalid_skipping", logging.ERROR, platform="instagram",
+                  status="skipped", error=_ig_check.error)
+        raise Exception(f"[INSTAGRAM] Token invalid ({_ig_check.status}): {_ig_check.error}")
+
     container_response = HTTP.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media",
         platform="instagram",
@@ -502,6 +512,13 @@ def publish_to_facebook(message, image_url):
         log_event(LOGGER, "facebook_publish_skipped", platform="facebook", status="skipped", details={"dry_run": FLAGS.dry_run, "enabled": FLAGS.enable_facebook_publishing, "message_preview": message[:160]})
         print("[DRY RUN][FACEBOOK] Would publish photo post")
         return "dry-run-facebook-id"
+
+    # Pre-publish token validation — skip platform rather than fail entire pipeline.
+    _fb_check = validate_facebook_token(FACEBOOK_CONFIG, HTTP, LOGGER)
+    if not _fb_check.valid:
+        log_event(LOGGER, "facebook_token_invalid_skipping", logging.ERROR, platform="facebook",
+                  status="skipped", error=_fb_check.error)
+        raise Exception(f"[FACEBOOK] Token invalid ({_fb_check.status}): {_fb_check.error}")
 
     result = HTTP.post(
         f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos",
