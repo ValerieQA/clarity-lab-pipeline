@@ -65,6 +65,9 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Random delay (0–30 min)
+        run: python -c "import random,time; d=random.randint(0,1800); print(f'Sleeping {d}s ({d//60}m {d%60}s)'); time.sleep(d)"
+
       - name: Run Threads pipeline
         env:
           OPENAI_API_KEY:                          ${{ secrets.OPENAI_API_KEY }}

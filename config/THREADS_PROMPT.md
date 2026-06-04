@@ -45,12 +45,15 @@ Do not write partial thoughts that require expansion.
 
 ## Length
 
-Preferred: 80–200 words.
-Maximum: 300 words.
+Maximum: 300 characters. This is a hard limit.
 
-The key observation must appear within the first 2–4 lines.
-The hidden structure must appear before truncation.
-The post must feel finished even if the reader never clicks "Show more".
+The post must be complete within 300 characters — no "Show more".
+The reader must get the full idea without clicking anything.
+
+Every word counts. Cut anything that does not add to the observation.
+Do not pad. Do not explain. Do not summarize.
+
+Write the complete thought. Then stop.
 
 ---
 

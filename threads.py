@@ -50,7 +50,7 @@ def clean_markdown(text):
     return text.strip()
 
 
-def truncate_to_limit(text, limit=500):
+def truncate_to_limit(text, limit=320):
     if len(text) <= limit:
         return text
     return text[:limit - 3].rsplit(' ', 1)[0] + "..."
@@ -108,14 +108,14 @@ Topic: {topic_row['Topic / Working Title']}
 Core observation: {topic_row['Core Observation']}
 Audience question: {topic_row['Audience Question']}
 
-Length requirement: {FLAGS.threads_target_words}–{FLAGS.threads_max_words} words. Hard maximum: {FLAGS.threads_max_words} words.
+Hard character limit: 300 characters total. The post must be complete and self-contained within 300 characters. Do not exceed this.
 """
 
     print(f"[GPT] Generating Threads content (type: {content_type})...")
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=400,
+        max_tokens=120,
         temperature=0.8,
     )
 
