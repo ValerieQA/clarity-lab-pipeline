@@ -1,43 +1,63 @@
 name: Clarity Lab — Threads Pipeline
 
+# Schedule overview:
+#   01:00 UTC  — publish post
+#   15:00 UTC  — publish post
+#   20:00 UTC  — publish post
+#   06:00 UTC  — collect comments
+#   12:00 UTC  — collect comments
+#   18:00 UTC  — collect comments
+#   Monday 07:00 UTC — weekly learning report
+
 on:
   schedule:
+    - cron: '0 1 * * *'
     - cron: '0 15 * * *'
     - cron: '0 20 * * *'
-    - cron: '0 1 * * *'
+    - cron: '0 6 * * *'
+    - cron: '0 12 * * *'
+    - cron: '0 18 * * *'
+    - cron: '0 7 * * 1'
+
   workflow_dispatch:
     inputs:
-      enable_threads_publishing:
-        description: 'Publish to Threads? Leave false unless intentionally approved.'
+      mode:
+        description: 'What to run'
         required: true
-        default: 'false'
+        default: 'publish'
         type: choice
-        options: ['false', 'true']
-      threads_require_approval:
-        description: 'Require approval before publishing? Keep true unless bypass is intentional.'
-        required: true
-        default: 'true'
-        type: choice
-        options: ['true', 'false']
-      collect_comments:
-        description: 'Collect Threads comments instead of generating a post?'
-        required: true
-        default: 'false'
-        type: choice
-        options: ['false', 'true']
-      weekly_report:
-        description: 'Generate weekly Threads learning report instead of generating a post?'
-        required: true
+        options: ['publish', 'collect_comments', 'weekly_report', 'dry_run']
+      dry_run:
+        description: 'Dry run (generate but do not publish)?'
+        required: false
         default: 'false'
         type: choice
         options: ['false', 'true']
 
 jobs:
-  publish_threads:
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 1: Publish a Threads post
+  # Runs at 01:00 / 15:00 / 20:00 UTC and on manual dispatch.
+  # ──────────────────────────────────────────────────────────
+  publish:
+    name: Publish Threads post
     runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'schedule' && (
+        github.event.schedule == '0 1 * * *' ||
+        github.event.schedule == '0 15 * * *' ||
+        github.event.schedule == '0 20 * * *'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && (
+        github.event.inputs.mode == 'publish' ||
+        github.event.inputs.mode == 'dry_run'
+      ))
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
@@ -47,35 +67,129 @@ jobs:
 
       - name: Run Threads pipeline
         env:
-          OPENAI_API_KEY:             ${{ secrets.OPENAI_API_KEY }}
-          THREADS_USER_ID:            ${{ secrets.THREADS_USER_ID }}
-          THREADS_ACCESS_TOKEN:       ${{ secrets.THREADS_ACCESS_TOKEN }}
-          THREADS_TOKEN:              ${{ secrets.THREADS_TOKEN }}
-          THREADS_API_VERSION:        v1.0
-          DRY_RUN:                    'false'
-          ENABLE_THREADS_PUBLISHING:  ${{ github.event.inputs.enable_threads_publishing || vars.ENABLE_THREADS_PUBLISHING || 'true' }}
-          THREADS_REQUIRE_APPROVAL:   ${{ github.event.inputs.threads_require_approval || vars.THREADS_REQUIRE_APPROVAL || 'false' }}
-          THREADS_DAILY_POST_LIMIT:   ${{ vars.THREADS_DAILY_POST_LIMIT || '3' }}
-          THREADS_POSTS_PER_RUN:      ${{ vars.THREADS_POSTS_PER_RUN || '1' }}
-          THREADS_SCHEDULE_MODE:      ${{ vars.THREADS_SCHEDULE_MODE || 'spaced' }}
-          ENABLE_THREADS_COMMENT_COLLECTION: ${{ vars.ENABLE_THREADS_COMMENT_COLLECTION || 'false' }}
-          ENABLE_THREADS_AUTO_REPLIES: 'false'
-          ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS: ${{ vars.ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS || 'true' }}
-          ENABLE_AUTO_PROMPT_UPDATES: 'false'
-          ENABLE_TOKEN_REFRESH:       'false'
+          OPENAI_API_KEY:                          ${{ secrets.OPENAI_API_KEY }}
+          THREADS_USER_ID:                         ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN:                    ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_TOKEN:                           ${{ secrets.THREADS_TOKEN }}
+          THREADS_API_VERSION:                     v1.0
+          DRY_RUN:                                 ${{ github.event.inputs.dry_run || 'false' }}
+          ENABLE_THREADS_PUBLISHING:               ${{ github.event.inputs.mode == 'dry_run' && 'false' || 'true' }}
+          THREADS_REQUIRE_APPROVAL:                'false'
+          THREADS_DAILY_POST_LIMIT:                ${{ vars.THREADS_DAILY_POST_LIMIT || '3' }}
+          THREADS_POSTS_PER_RUN:                   ${{ vars.THREADS_POSTS_PER_RUN || '1' }}
+          THREADS_SCHEDULE_MODE:                   ${{ vars.THREADS_SCHEDULE_MODE || 'spaced' }}
+          ENABLE_THREADS_COMMENT_COLLECTION:       'true'
+          ENABLE_THREADS_AUTO_REPLIES:             'false'
+          ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS: 'true'
+          ENABLE_AUTO_PROMPT_UPDATES:              'false'
+          ENABLE_TOKEN_REFRESH:                    'false'
         run: |
-          if [ "${{ github.event.inputs.collect_comments || 'false' }}" = "true" ]; then
-            python threads.py --collect-comments
-          elif [ "${{ github.event.inputs.weekly_report || 'false' }}" = "true" ]; then
-            python threads.py --weekly-report
-          else
-            python threads.py
-          fi
+          python threads.py 2>&1 | tee /tmp/threads_out.txt
+          echo "## Threads Publish — $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/threads_out.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
-      - name: Commit Threads artifacts
+      - name: Commit data artifacts
         run: |
-          git config --global user.name "Clarity Lab Bot"
-          git config --global user.email "bot@inneros.online"
-          git add data/threads_posts.csv data/threads_comments.csv data/prompt_evolution_log.csv data/threads_weekly_reports/ || true
-          git diff --staged --quiet || git commit -m "🧵 Threads update: $(date +'%Y-%m-%d')"
+          git config user.name  "Clarity Lab Bot"
+          git config user.email "bot@inneros.online"
+          git add data/threads_posts.csv data/threads_comments.csv data/prompt_evolution_log.csv || true
+          git diff --staged --quiet || git commit -m "🧵 Threads post: $(date -u +'%Y-%m-%d %H:%M')"
+          git push
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 2: Collect comments
+  # Runs at 06:00 / 12:00 / 18:00 UTC and on manual dispatch.
+  # ──────────────────────────────────────────────────────────
+  collect_comments:
+    name: Collect Threads comments
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'schedule' && (
+        github.event.schedule == '0 6 * * *' ||
+        github.event.schedule == '0 12 * * *' ||
+        github.event.schedule == '0 18 * * *'
+      )) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'collect_comments')
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install -r requirements.txt
+
+      - name: Collect comments
+        env:
+          THREADS_USER_ID:                   ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN:              ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_TOKEN:                     ${{ secrets.THREADS_TOKEN }}
+          THREADS_API_VERSION:               v1.0
+          ENABLE_THREADS_COMMENT_COLLECTION: 'true'
+          ENABLE_THREADS_AUTO_REPLIES:       'false'
+          DRY_RUN:                           'false'
+        run: |
+          python threads.py --collect-comments 2>&1 | tee /tmp/comments_out.txt
+          echo "## Threads Comment Collection — $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/comments_out.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit comments
+        run: |
+          git config user.name  "Clarity Lab Bot"
+          git config user.email "bot@inneros.online"
+          git add data/threads_comments.csv || true
+          git diff --staged --quiet || git commit -m "💬 Threads comments: $(date -u +'%Y-%m-%d %H:%M')"
+          git push
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 3: Weekly learning report
+  # Runs every Monday at 07:00 UTC and on manual dispatch.
+  # ──────────────────────────────────────────────────────────
+  weekly_report:
+    name: Weekly learning report
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'schedule' && github.event.schedule == '0 7 * * 1') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'weekly_report')
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install -r requirements.txt
+
+      - name: Generate weekly report
+        env:
+          THREADS_USER_ID:                         ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN:                    ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_TOKEN:                           ${{ secrets.THREADS_TOKEN }}
+          THREADS_API_VERSION:                     v1.0
+          ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS: 'true'
+          ENABLE_AUTO_PROMPT_UPDATES:              'false'
+          DRY_RUN:                                 'false'
+        run: |
+          python threads.py --weekly-report 2>&1 | tee /tmp/report_out.txt
+          echo "## Weekly Threads Report — $(date -u '+%Y-%m-%d')" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/report_out.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit report
+        run: |
+          git config user.name  "Clarity Lab Bot"
+          git config user.email "bot@inneros.online"
+          git add data/threads_weekly_reports/ data/prompt_evolution_log.csv || true
+          git diff --staged --quiet || git commit -m "📊 Weekly Threads report: $(date -u +'%Y-%m-%d')"
           git push
