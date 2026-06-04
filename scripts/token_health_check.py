@@ -114,40 +114,19 @@ def check_instagram(flags: FeatureFlags, http: HttpClient) -> int:
         return 1
 
     expires_in = result.expires_in
+    days_left = (expires_in // 86_400) if expires_in is not None else None
     print(f"[INSTAGRAM] Token valid (user={result.username}, expires_in={expires_in}s).")
 
     if not _needs_refresh(expires_in):
         print(f"[INSTAGRAM] Token not due for refresh (>{REFRESH_THRESHOLD_DAYS}d remaining). Done.")
         return 0
 
-    print(f"[INSTAGRAM] Token expiring within {REFRESH_THRESHOLD_DAYS} days — refreshing...")
-    refresh_result = refresh_instagram_token(config, http, logger)
-    if not refresh_result.success:
-        print(f"[INSTAGRAM] Refresh FAILED: {refresh_result.status} — {refresh_result.error}")
-        return 1
-
-    # Validate new token before writing to GitHub Secrets.
-    print("[INSTAGRAM] Validating refreshed token...")
-    new_config = InstagramConfig(
-        user_id=config.user_id,
-        access_token=refresh_result.access_token,
-        api_version=config.api_version,
+    # Auto-refresh is disabled for Instagram — warn and exit 1 to trigger alert.
+    print(
+        f"[INSTAGRAM] EXPIRING SOON: token expires in ~{days_left}d. "
+        "Run scripts/refresh_instagram_token.py manually to renew."
     )
-    new_validation = validate_instagram_token(new_config, http, logger)
-    if not new_validation.valid:
-        print(f"[INSTAGRAM] Refreshed token failed validation: {new_validation.status} — {new_validation.error}")
-        print("[INSTAGRAM] Keeping existing GitHub Secret unchanged.")
-        return 1
-
-    print("[INSTAGRAM] Refreshed token validated. Updating GitHub Secret IG_TOKEN...")
-    try:
-        update_github_secret("IG_TOKEN", refresh_result.access_token)
-    except Exception as exc:
-        print(f"[INSTAGRAM] ERROR: Failed to update GitHub Secret: {exc}")
-        return 2
-
-    print(f"[INSTAGRAM] Done. New token expires in ~{refresh_result.expires_in}s.")
-    return 0
+    return 1
 
 
 def check_facebook(flags: FeatureFlags, http: HttpClient) -> int:

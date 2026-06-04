@@ -89,11 +89,15 @@ jobs:
 
             const platformList = failed.map(p => `- ${p}`).join('\n');
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const isExpiryWarning = failed.length === 1 && failed[0].includes('Instagram');
+            const title = isExpiryWarning
+              ? `⏳ Instagram token expiring soon — manual refresh required`
+              : `⚠️ Meta token health check failed — manual action required`;
 
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `⚠️ Meta token health check failed — manual action required`,
+              title,
               body: [
                 '## Token health check failed',
                 '',
