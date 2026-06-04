@@ -81,3 +81,52 @@ def test_dry_run_publish_helpers_do_not_call_http(monkeypatch):
     assert pipeline.publish_to_instagram("caption", "image") == "dry-run-instagram-id"
     assert pipeline.publish_to_facebook("message", "image") == "dry-run-facebook-id"
     assert pipeline.publish_to_wix("Title", "Website body", "image").startswith("dry-run://wix/post/")
+
+
+def test_threads_automation_flags_require_explicit_approval_bypass(monkeypatch):
+    monkeypatch.setenv("ENABLE_THREADS_PUBLISHING", "true")
+    monkeypatch.setenv("THREADS_REQUIRE_APPROVAL", "false")
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("THREADS_DAILY_POST_LIMIT", "3")
+    monkeypatch.setenv("THREADS_POSTS_PER_RUN", "1")
+    flags = FeatureFlags.from_env()
+    assert flags.enable_threads_publishing is True
+    assert flags.threads_require_approval is False
+    assert flags.threads_daily_post_limit == 3
+    assert flags.threads_posts_per_run == 1
+    assert flags.enable_threads_comment_collection is False
+    assert flags.enable_threads_auto_replies is False
+    assert flags.enable_prompt_evolution_recommendations is True
+    assert flags.enable_auto_prompt_updates is False
+
+
+def test_published_thread_count_enforces_daily_limit():
+    from datetime import datetime, timezone
+    from threads_store import published_thread_count_on, update_post
+
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "threads_posts.csv"
+        record = draft_record("topic", "A short post", "spark", "spark")
+        append_post(record, path)
+        update_post(
+            record["post_id"],
+            {
+                "status": "published",
+                "external_threads_id": "one,two",
+                "published_at": datetime.now(timezone.utc).isoformat(),
+            },
+            path,
+        )
+        assert published_thread_count_on(path=path) == 2
+
+
+def test_weekly_report_logs_prompt_recommendations_without_editing_prompts(tmp_path, monkeypatch):
+    from threads_learning import generate_weekly_report
+
+    monkeypatch.chdir(tmp_path)
+    Path("data").mkdir()
+    flags = FeatureFlags(enable_prompt_evolution_recommendations=True, enable_auto_prompt_updates=True)
+    report_path = generate_weekly_report(flags)
+    assert report_path.exists()
+    assert Path("data/prompt_evolution_log.csv").exists()
+    assert not Path("config/THREADS_PROMPT.md").exists()

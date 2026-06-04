@@ -5,6 +5,7 @@ Production-safe draft-first Threads workflow.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import logging
 import re
@@ -19,7 +20,8 @@ from meta_tokens import validate_threads_token
 from prompt_loader import THREADS_PROMPT_PATH, load_prompt
 from runtime_config import FeatureFlags, ThreadsConfig
 from structured_logging import get_logger, log_event
-from threads_store import append_post, draft_record, find_duplicate
+from threads_store import append_post, draft_record, find_duplicate, published_thread_count_on, update_post
+from threads_learning import collect_threads_comments, generate_weekly_report
 
 # ============================================================
 # CONFIG
@@ -27,7 +29,7 @@ from threads_store import append_post, draft_record, find_duplicate
 
 import os
 
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 TOPICS_FILE = "topics.csv"
 CONTENT_TYPES = ["spark", "question", "thread_series"]
 FLAGS = FeatureFlags.from_env()
@@ -92,6 +94,8 @@ def get_content_type(index):
 
 
 def generate_threads_content(topic_row, content_type):
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is required to generate Threads content")
     client = OpenAI(api_key=OPENAI_API_KEY, max_retries=FLAGS.http_max_retries, timeout=FLAGS.http_timeout_seconds)
     base_prompt = load_prompt(THREADS_PROMPT_PATH)
     prompt = f"""
@@ -178,6 +182,28 @@ def publish_single_post(text):
     return post_id
 
 
+def can_publish_automatically(flags: FeatureFlags) -> bool:
+    return flags.enable_threads_publishing and not flags.threads_require_approval and not flags.dry_run
+
+
+def remaining_daily_threads_quota(flags: FeatureFlags) -> int:
+    return max(0, flags.threads_daily_post_limit - published_thread_count_on())
+
+
+def publication_block_reason(flags: FeatureFlags, posts: list[str]) -> str:
+    if flags.dry_run:
+        return "dry_run_enabled"
+    if not flags.enable_threads_publishing:
+        return "publishing_disabled"
+    if flags.threads_require_approval:
+        return "approval_required"
+    if len(posts) > flags.threads_posts_per_run:
+        return "posts_per_run_limit_exceeded"
+    if len(posts) > remaining_daily_threads_quota(flags):
+        return "daily_post_limit_exceeded"
+    return ""
+
+
 def publish_thread_series(posts):
     print(f"[THREADS] Publishing thread series ({len(posts)} posts)...")
     post_ids = []
@@ -213,8 +239,9 @@ def run_threads_pipeline():
 
     raw_content = generate_threads_content(topic, content_type)
     posts = posts_from_raw(raw_content, content_type)
+    generated_text = "\n\n".join(posts)
 
-    duplicate = find_duplicate("\n\n".join(posts), extra_texts=[topic.get("Instagram Article Draft", "")])
+    duplicate = find_duplicate(generated_text, extra_texts=[topic.get("Instagram Article Draft", "")])
     source_topic = topic["Topic / Working Title"]
     if duplicate.is_duplicate:
         log_event(
@@ -225,50 +252,96 @@ def run_threads_pipeline():
             status="rejected",
             details={"similarity": duplicate.similarity, "matched_post_id": duplicate.matched_post_id},
         )
-        record = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="rejected", error_message="duplicate_detected")
+        record = draft_record(source_topic, generated_text, content_type, content_type, status="rejected", error_message="duplicate_detected")
         append_post(record)
         print(f"[THREADS] Duplicate detected ({duplicate.similarity:.2f}); draft rejected and not published")
         return
 
-    record = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="draft")
+    record = draft_record(source_topic, generated_text, content_type, content_type, status="draft")
     append_post(record)
     print(f"[THREADS] Draft saved: {record['post_id']}")
 
-    if FLAGS.dry_run or not FLAGS.enable_threads_publishing:
-        log_event(LOGGER, "threads_publish_skipped", platform="threads", status="skipped", details={"dry_run": FLAGS.dry_run, "enabled": FLAGS.enable_threads_publishing, "post_id": record["post_id"]})
-        print("[THREADS] Publishing skipped. Set ENABLE_THREADS_PUBLISHING=true to publish after review.")
+    block_reason = publication_block_reason(FLAGS, posts)
+    if block_reason:
+        log_event(
+            LOGGER,
+            "threads_publish_skipped",
+            platform="threads",
+            status="skipped",
+            details={
+                "reason": block_reason,
+                "dry_run": FLAGS.dry_run,
+                "enabled": FLAGS.enable_threads_publishing,
+                "approval_required": FLAGS.threads_require_approval,
+                "posts_in_candidate": len(posts),
+                "posts_per_run": FLAGS.threads_posts_per_run,
+                "remaining_daily_quota": remaining_daily_threads_quota(FLAGS),
+                "post_id": record["post_id"],
+            },
+        )
+        print(f"[THREADS] Publishing skipped safely: {block_reason}")
         return
 
     token_result = validate_threads_token(THREADS_CONFIG, HTTP, LOGGER)
     if not token_result.valid:
-        failed = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="failed", error_message=token_result.error)
-        append_post(failed)
+        update_post(record["post_id"], {"status": "failed", "error_message": token_result.error})
         print(f"[THREADS] Token invalid; publishing skipped safely: {token_result.status}")
         return
 
     try:
+        # Re-check duplicate status immediately before the irreversible API call.
+        second_duplicate = find_duplicate(generated_text, extra_texts=[topic.get("Instagram Article Draft", "")])
+        if second_duplicate.is_duplicate and second_duplicate.matched_post_id != record["post_id"]:
+            update_post(record["post_id"], {"status": "rejected", "error_message": "duplicate_detected_before_publish"})
+            print(f"[THREADS] Duplicate detected before publish; skipped: {second_duplicate.matched_post_id}")
+            return
+
         if content_type == "thread_series":
             external_ids = publish_thread_series(posts)
             external_id = ",".join(external_ids)
         else:
             external_id = publish_single_post(posts[0])
-        published = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="published")
-        published["external_threads_id"] = external_id
-        published["published_at"] = datetime.now(timezone.utc).isoformat()
-        append_post(published)
+        update_post(
+            record["post_id"],
+            {
+                "status": "published",
+                "external_threads_id": external_id,
+                "published_at": datetime.now(timezone.utc).isoformat(),
+                "error_message": "",
+            },
+        )
     except Exception as exc:
-        failed = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="failed", error_message=str(exc))
-        append_post(failed)
-        log_event(LOGGER, "threads_publish_failed", logging.ERROR, platform="threads", status="failed", error=str(exc))
+        update_post(record["post_id"], {"status": "failed", "error_message": str(exc)})
+        log_event(LOGGER, "threads_publish_failed", logging.ERROR, platform="threads", status="failed", error=str(exc), record_id=record["post_id"])
         print(f"[THREADS] Publish failed safely: {exc}")
         return
 
     print(f"\n{'=' * 60}")
     print("✅ Threads published!")
-    print(f"   Topic: {topic['Topic / Working Title']}")
-    print(f"   Type: {content_type}")
     print(f"{'=' * 60}\n")
 
 
+def run_comment_collection():
+    collected = collect_threads_comments(THREADS_CONFIG, HTTP, FLAGS)
+    print(f"[THREADS] Comments collected: {collected}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Safe Threads publishing and learning tools")
+    parser.add_argument("--collect-comments", action="store_true", help="Collect Threads comments when ENABLE_THREADS_COMMENT_COLLECTION=true")
+    parser.add_argument("--weekly-report", action="store_true", help="Generate a weekly Threads learning report")
+    args = parser.parse_args()
+
+    if args.collect_comments:
+        run_comment_collection()
+    elif args.weekly_report:
+        path = generate_weekly_report(FLAGS)
+        print(f"[THREADS] Weekly report saved: {path}")
+    else:
+        run_threads_pipeline()
+        if FLAGS.enable_threads_comment_collection:
+            run_comment_collection()
+
+
 if __name__ == "__main__":
-    run_threads_pipeline()
+    main()
