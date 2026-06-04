@@ -42,14 +42,11 @@ jobs:
           python-version: '3.11'
       - run: pip install -r requirements.txt
 
-      - name: Validate and auto-refresh Instagram token
+      - name: Validate Instagram token
         id: check
         env:
           IG_USER_ID:           ${{ secrets.IG_USER_ID }}
           IG_TOKEN:             ${{ secrets.IG_TOKEN }}
-          ENABLE_TOKEN_REFRESH: 'true'
-          GH_TOKEN_WRITER:      ${{ secrets.GH_TOKEN_WRITER }}
-          GH_REPO:              ${{ github.repository }}
         run: python scripts/token_health_check.py --platform instagram
 
   facebook:
