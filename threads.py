@@ -101,30 +101,53 @@ def generate_threads_content(topic_row, content_type):
     prompt = f"""
 {base_prompt}
 
+---
+
 Content type: {content_type}
 Topic: {topic_row['Topic / Working Title']}
 Core observation: {topic_row['Core Observation']}
 Audience question: {topic_row['Audience Question']}
+
+Length requirement: {FLAGS.threads_target_words}–{FLAGS.threads_max_words} words. Hard maximum: {FLAGS.threads_max_words} words.
 """
 
     print(f"[GPT] Generating Threads content (type: {content_type})...")
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=600,
+        max_tokens=400,
         temperature=0.8,
     )
 
     text = response.choices[0].message.content.strip()
-    print("[GPT] Threads content generated")
+    word_count = len(text.split())
+    print(f"[GPT] Threads content generated ({word_count} words)")
     return text
+
+
+def _validate_word_count(text: str) -> str:
+    """Trim to max words if GPT exceeded the limit. Returns cleaned text."""
+    words = text.split()
+    if len(words) <= FLAGS.threads_max_words:
+        return text
+    trimmed = " ".join(words[:FLAGS.threads_max_words])
+    # Try to end on a complete sentence.
+    for punct in (".", "!", "?"):
+        last = trimmed.rfind(punct)
+        if last > len(trimmed) * 0.6:
+            trimmed = trimmed[:last + 1]
+            break
+    print(f"[THREADS] Post trimmed to {len(trimmed.split())} words (was {len(words)})")
+    return trimmed
 
 
 def posts_from_raw(raw_content: str, content_type: str) -> list[str]:
     if content_type == "thread_series":
         posts = parse_series_sections(raw_content)
     else:
-        posts = [truncate_to_limit(clean_markdown(raw_content))]
+        cleaned = clean_markdown(raw_content)
+        validated = _validate_word_count(cleaned)
+        posts = [truncate_to_limit(validated)]
     validate_threads_posts(posts)
     return posts
 

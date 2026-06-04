@@ -83,6 +83,8 @@ jobs:
           ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS: 'true'
           ENABLE_AUTO_PROMPT_UPDATES:              'false'
           ENABLE_TOKEN_REFRESH:                    'false'
+          THREADS_TARGET_WORDS:                    ${{ vars.THREADS_TARGET_WORDS || '120' }}
+          THREADS_MAX_WORDS:                       ${{ vars.THREADS_MAX_WORDS || '220' }}
         run: |
           set -o pipefail
           python threads.py 2>&1 | tee /tmp/threads_out.txt

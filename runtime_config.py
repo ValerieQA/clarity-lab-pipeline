@@ -43,6 +43,8 @@ class FeatureFlags:
     threads_daily_post_limit: int = 3
     threads_posts_per_run: int = 1
     threads_schedule_mode: str = "spaced"
+    threads_target_words: int = 120
+    threads_max_words: int = 220
     enable_threads_comment_collection: bool = False
     enable_threads_auto_replies: bool = False
     enable_prompt_evolution_recommendations: bool = True
@@ -63,6 +65,8 @@ class FeatureFlags:
             threads_daily_post_limit=env_int("THREADS_DAILY_POST_LIMIT", 3),
             threads_posts_per_run=env_int("THREADS_POSTS_PER_RUN", 1),
             threads_schedule_mode=os.getenv("THREADS_SCHEDULE_MODE", "spaced"),
+            threads_target_words=env_int("THREADS_TARGET_WORDS", 120),
+            threads_max_words=env_int("THREADS_MAX_WORDS", 220),
             enable_threads_comment_collection=env_bool("ENABLE_THREADS_COMMENT_COLLECTION", False),
             enable_threads_auto_replies=env_bool("ENABLE_THREADS_AUTO_REPLIES", False),
             enable_prompt_evolution_recommendations=env_bool("ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS", True),
