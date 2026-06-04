@@ -1,12 +1,10 @@
-name: Clarity Lab — Content Pipeline
+name: Clarity Lab — Dry Run
 
 on:
-  schedule:
-    - cron: '0 9 * * 1,3,5'
   workflow_dispatch:
 
 jobs:
-  publish:
+  dry_run:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -14,7 +12,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
-      - name: Run pipeline
+      - name: Run production pipeline in dry-run mode
         env:
           OPENAI_API_KEY:        ${{ secrets.OPENAI_API_KEY }}
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
@@ -26,17 +24,5 @@ jobs:
           IG_TOKEN:              ${{ secrets.IG_TOKEN }}
           FB_PAGE_ID:            ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN:         ${{ secrets.FB_PAGE_TOKEN }}
-          DRY_RUN:               'false'
-          ENABLE_WIX_PUBLISHING: 'true'
-          ENABLE_INSTAGRAM_PUBLISHING: 'true'
-          ENABLE_FACEBOOK_PUBLISHING: 'true'
-          ENABLE_THREADS_PUBLISHING: 'false'
-          ENABLE_TOKEN_REFRESH:  'false'
+          DRY_RUN:               'true'
         run: python pipeline.py
-      - name: Commit updated topics.csv
-        run: |
-          git config --global user.name "Clarity Lab Bot"
-          git config --global user.email "bot@inneros.online"
-          git add topics.csv
-          git diff --staged --quiet || git commit -m "✅ Published: $(date +'%Y-%m-%d')"
-          git push

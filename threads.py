@@ -1,34 +1,44 @@
 """
 Clarity Lab — Threads Pipeline
-Runs Mon/Wed/Fri (same day as main pipeline) + Tue/Thu independently
-Three content types in rotation: spark, question, thread_series
+Production-safe draft-first Threads workflow.
 """
 
-import os
+from __future__ import annotations
+
 import csv
+import logging
 import re
 import time
-import requests
-from datetime import datetime
+from datetime import datetime, timezone
+
 from openai import OpenAI
+
+from content_validation import ContentValidationError, parse_thread_series as parse_series_sections, validate_threads_posts
+from http_utils import HttpClient
+from meta_tokens import validate_threads_token
+from prompt_loader import THREADS_PROMPT_PATH, load_prompt
+from runtime_config import FeatureFlags, ThreadsConfig
+from structured_logging import get_logger, log_event
+from threads_store import append_post, draft_record, find_duplicate
 
 # ============================================================
 # CONFIG
 # ============================================================
 
-OPENAI_API_KEY     = os.environ["OPENAI_API_KEY"]
-THREADS_USER_ID    = os.environ["THREADS_USER_ID"]
-THREADS_TOKEN      = os.environ["THREADS_TOKEN"]
+import os
 
-TOPICS_FILE        = "topics.csv"
-PROMPT_FILE        = "config/prompt.md"
-
-# Content types in rotation
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+TOPICS_FILE = "topics.csv"
 CONTENT_TYPES = ["spark", "question", "thread_series"]
+FLAGS = FeatureFlags.from_env()
+THREADS_CONFIG = ThreadsConfig.from_env()
+LOGGER = get_logger("threads")
+HTTP = HttpClient.from_flags(FLAGS, LOGGER)
 
 # ============================================================
 # HELPERS
 # ============================================================
+
 
 def clean_markdown(text):
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
@@ -37,20 +47,19 @@ def clean_markdown(text):
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
+
 def truncate_to_limit(text, limit=500):
     if len(text) <= limit:
         return text
-    return text[:limit-3].rsplit(' ', 1)[0] + "..."
+    return text[:limit - 3].rsplit(' ', 1)[0] + "..."
+
 
 # ============================================================
 # STEP 1: Get topic
 # ============================================================
 
+
 def get_topic_for_threads():
-    """
-    On Mon/Wed/Fri: use last published topic (connects to article).
-    On Tue/Thu: use last published topic but different angle.
-    """
     rows = []
     with open(TOPICS_FILE, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -60,7 +69,6 @@ def get_topic_for_threads():
     published = [r for r in rows if r.get("Status", "").strip().lower() == "published"]
 
     if not published:
-        # Fallback: use first ready topic
         ready = [r for r in rows if r.get("Status", "").strip().lower() in ("ready", "")]
         if not ready:
             raise Exception("No topics available in topics.csv")
@@ -73,103 +81,26 @@ def get_topic_for_threads():
     print(f"[THREADS] Topic: {topic['Topic / Working Title']}")
     return index, topic
 
+
 def get_content_type(index):
     return CONTENT_TYPES[index % len(CONTENT_TYPES)]
+
 
 # ============================================================
 # STEP 2: Generate Threads content via GPT
 # ============================================================
 
+
 def generate_threads_content(topic_row, content_type):
-    client = OpenAI(api_key=OPENAI_API_KEY)
-
-    type_prompts = {
-
-        "spark": """
-Write one Spark post for Threads (like Twitter/X).
-
-A Spark is:
-- One sharp observation or insight
-- 1-3 sentences maximum
-- No explanation, no conclusion
-- Reads like something you suddenly noticed
-- Provokes recognition, not agreement
-- Calm but precise — not aggressive, not soft
-- Under 280 characters ideally, 500 max
-
-The reader should feel: "I know this. I've never said it this way."
-
-Do NOT:
-- Give advice
-- Use hashtags
-- Use emojis
-- Sound motivational
-- Sound like a caption
-
-Return ONLY the post text. Nothing else.
-""",
-
-        "question": """
-Write one Question post for Threads.
-
-A Question post is:
-- One question, nothing else
-- The question should have no obvious answer
-- It should create a moment of genuine pause
-- It should feel personal without being intimate
-- It should connect to the topic without explaining the topic
-- Under 200 characters ideally
-
-The reader should feel: "I don't actually know the answer to this."
-
-Do NOT:
-- Add context or explanation
-- Use rhetorical questions with obvious answers
-- Sound like a quiz or survey
-- Use hashtags or emojis
-
-Return ONLY the question. Nothing else.
-""",
-
-        "thread_series": """
-Write a Thread series for Threads (3-4 connected posts).
-
-Structure:
-Post 1: One observation that lands quietly. Sets the scene.
-Post 2: The contradiction or tension inside that observation.
-Post 3: One precise question that opens it up.
-Post 4 (optional): Soft invitation — "Full reflection on the site. Link in bio."
-
-Rules:
-- Each post max 500 characters
-- Posts connect but each can stand alone
-- Tone: calm, editorial, precise, non-marketing
-- No hashtags, no emojis
-- The series should feel like one thought unfolding
-
-Format your response exactly like this:
-===POST1===
-[text]
-===POST2===
-[text]
-===POST3===
-[text]
-===POST4===
-[text]
-"""
-    }
-
+    client = OpenAI(api_key=OPENAI_API_KEY, max_retries=FLAGS.http_max_retries, timeout=FLAGS.http_timeout_seconds)
+    base_prompt = load_prompt(THREADS_PROMPT_PATH)
     prompt = f"""
-You are writing for Clarity Lab — a reflective AI assistant brand.
+{base_prompt}
 
-Brand voice: quiet, precise, human, non-marketing, editorial.
-Platform: Threads (like Twitter — fast, text-first, conversational).
-
+Content type: {content_type}
 Topic: {topic_row['Topic / Working Title']}
 Core observation: {topic_row['Core Observation']}
 Audience question: {topic_row['Audience Question']}
-
-{type_prompts[content_type]}
 """
 
     print(f"[GPT] Generating Threads content (type: {content_type})...")
@@ -177,50 +108,41 @@ Audience question: {topic_row['Audience Question']}
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
         max_tokens=600,
-        temperature=0.8
+        temperature=0.8,
     )
 
     text = response.choices[0].message.content.strip()
-    print(f"[GPT] Content generated")
+    print("[GPT] Threads content generated")
     return text
 
-# ============================================================
-# STEP 3: Parse thread series
-# ============================================================
 
-def parse_thread_series(raw_text):
-    patterns = {
-        "post1": r"===POST1===\s*(.*?)(?====|\Z)",
-        "post2": r"===POST2===\s*(.*?)(?====|\Z)",
-        "post3": r"===POST3===\s*(.*?)(?====|\Z)",
-        "post4": r"===POST4===\s*(.*?)(?====|\Z)",
-    }
-    posts = []
-    for key in ["post1", "post2", "post3", "post4"]:
-        match = re.search(patterns[key], raw_text, re.DOTALL)
-        if match:
-            text = match.group(1).strip()
-            if text:
-                posts.append(text)
+def posts_from_raw(raw_content: str, content_type: str) -> list[str]:
+    if content_type == "thread_series":
+        posts = parse_series_sections(raw_content)
+    else:
+        posts = [truncate_to_limit(clean_markdown(raw_content))]
+    validate_threads_posts(posts)
     return posts
 
+
 # ============================================================
-# STEP 4: Publish to Threads
+# STEP 3: Publish to Threads (disabled by default)
 # ============================================================
 
+
 def create_threads_container(text, reply_to_id=None):
-    """Create a single Threads media container."""
     params = {
         "text": truncate_to_limit(clean_markdown(text)),
         "media_type": "TEXT",
-        "access_token": THREADS_TOKEN
+        "access_token": THREADS_CONFIG.access_token,
     }
     if reply_to_id:
         params["reply_to_id"] = reply_to_id
 
-    response = requests.post(
-        f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads",
-        data=params
+    response = HTTP.post(
+        f"https://graph.threads.net/{THREADS_CONFIG.api_version}/{THREADS_CONFIG.user_id}/threads",
+        platform="threads",
+        data=params,
     )
     result = response.json()
 
@@ -231,14 +153,12 @@ def create_threads_container(text, reply_to_id=None):
 
     return result["id"]
 
+
 def publish_threads_container(container_id):
-    """Publish a created container."""
-    response = requests.post(
-        f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads_publish",
-        data={
-            "creation_id": container_id,
-            "access_token": THREADS_TOKEN
-        }
+    response = HTTP.post(
+        f"https://graph.threads.net/{THREADS_CONFIG.api_version}/{THREADS_CONFIG.user_id}/threads_publish",
+        platform="threads",
+        data={"creation_id": container_id, "access_token": THREADS_CONFIG.access_token},
     )
     result = response.json()
 
@@ -249,63 +169,106 @@ def publish_threads_container(container_id):
 
     return result["id"]
 
+
 def publish_single_post(text):
-    """Create and publish one Threads post."""
     container_id = create_threads_container(text)
     time.sleep(3)
     post_id = publish_threads_container(container_id)
     print(f"[THREADS] Post published: {post_id}")
     return post_id
 
+
 def publish_thread_series(posts):
-    """
-    Publish a thread series.
-    Each post replies to the previous one.
-    """
     print(f"[THREADS] Publishing thread series ({len(posts)} posts)...")
     post_ids = []
     reply_to_id = None
 
     for i, post_text in enumerate(posts):
-        print(f"[THREADS] Publishing post {i+1}/{len(posts)}...")
+        print(f"[THREADS] Publishing post {i + 1}/{len(posts)}...")
         container_id = create_threads_container(post_text, reply_to_id=reply_to_id)
         time.sleep(3)
         post_id = publish_threads_container(container_id)
         post_ids.append(post_id)
-        reply_to_id = post_id  # each post replies to previous
-        time.sleep(5)  # small delay between posts
+        reply_to_id = post_id
+        time.sleep(5)
 
     print(f"[THREADS] Thread series published: {len(post_ids)} posts")
     return post_ids
+
 
 # ============================================================
 # MAIN
 # ============================================================
 
+
 def run_threads_pipeline():
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Clarity Lab Threads Pipeline — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
+    log_event(LOGGER, "threads_pipeline_started", status="dry_run" if FLAGS.dry_run else "running", details=FLAGS.__dict__)
 
     index, topic = get_topic_for_threads()
     content_type = get_content_type(index)
     print(f"[THREADS] Content type: {content_type}")
 
     raw_content = generate_threads_content(topic, content_type)
+    posts = posts_from_raw(raw_content, content_type)
 
-    if content_type == "thread_series":
-        posts = parse_thread_series(raw_content)
-        if not posts:
-            raise Exception("[THREADS] Failed to parse thread series")
-        publish_thread_series(posts)
-    else:
-        publish_single_post(raw_content)
+    duplicate = find_duplicate("\n\n".join(posts), extra_texts=[topic.get("Instagram Article Draft", "")])
+    source_topic = topic["Topic / Working Title"]
+    if duplicate.is_duplicate:
+        log_event(
+            LOGGER,
+            "threads_duplicate_detected",
+            logging.WARNING,
+            platform="threads",
+            status="rejected",
+            details={"similarity": duplicate.similarity, "matched_post_id": duplicate.matched_post_id},
+        )
+        record = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="rejected", error_message="duplicate_detected")
+        append_post(record)
+        print(f"[THREADS] Duplicate detected ({duplicate.similarity:.2f}); draft rejected and not published")
+        return
 
-    print(f"\n{'='*60}")
-    print(f"✅ Threads published!")
+    record = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="draft")
+    append_post(record)
+    print(f"[THREADS] Draft saved: {record['post_id']}")
+
+    if FLAGS.dry_run or not FLAGS.enable_threads_publishing:
+        log_event(LOGGER, "threads_publish_skipped", platform="threads", status="skipped", details={"dry_run": FLAGS.dry_run, "enabled": FLAGS.enable_threads_publishing, "post_id": record["post_id"]})
+        print("[THREADS] Publishing skipped. Set ENABLE_THREADS_PUBLISHING=true to publish after review.")
+        return
+
+    token_result = validate_threads_token(THREADS_CONFIG, HTTP, LOGGER)
+    if not token_result.valid:
+        failed = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="failed", error_message=token_result.error)
+        append_post(failed)
+        print(f"[THREADS] Token invalid; publishing skipped safely: {token_result.status}")
+        return
+
+    try:
+        if content_type == "thread_series":
+            external_ids = publish_thread_series(posts)
+            external_id = ",".join(external_ids)
+        else:
+            external_id = publish_single_post(posts[0])
+        published = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="published")
+        published["external_threads_id"] = external_id
+        published["published_at"] = datetime.now(timezone.utc).isoformat()
+        append_post(published)
+    except Exception as exc:
+        failed = draft_record(source_topic, "\n\n".join(posts), content_type, content_type, status="failed", error_message=str(exc))
+        append_post(failed)
+        log_event(LOGGER, "threads_publish_failed", logging.ERROR, platform="threads", status="failed", error=str(exc))
+        print(f"[THREADS] Publish failed safely: {exc}")
+        return
+
+    print(f"\n{'=' * 60}")
+    print("✅ Threads published!")
     print(f"   Topic: {topic['Topic / Working Title']}")
     print(f"   Type: {content_type}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
+
 
 if __name__ == "__main__":
     run_threads_pipeline()

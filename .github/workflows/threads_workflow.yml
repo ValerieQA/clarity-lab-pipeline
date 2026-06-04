@@ -1,13 +1,17 @@
-name: Clarity Lab — Threads Pipeline
+name: Clarity Lab — Threads Draft Pipeline
 
 on:
   schedule:
-    # Runs Mon/Wed/Fri at 10:00 UTC (1hr after main pipeline)
-    # + Tue/Thu at 14:00 UTC for independent posts
     - cron: '0 10 * * 1,3,5'
     - cron: '0 14 * * 2,4'
-
   workflow_dispatch:
+    inputs:
+      enable_threads_publishing:
+        description: 'Publish to Threads? Leave false unless intentionally approved.'
+        required: true
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 jobs:
   publish_threads:
@@ -22,9 +26,21 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Run Threads pipeline
+      - name: Run Threads draft pipeline
         env:
-          OPENAI_API_KEY:    ${{ secrets.OPENAI_API_KEY }}
-          THREADS_USER_ID:   ${{ secrets.THREADS_USER_ID }}
-          THREADS_TOKEN:     ${{ secrets.THREADS_TOKEN }}
+          OPENAI_API_KEY:             ${{ secrets.OPENAI_API_KEY }}
+          THREADS_USER_ID:            ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN:       ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_TOKEN:              ${{ secrets.THREADS_TOKEN }}
+          THREADS_API_VERSION:        v1.0
+          ENABLE_THREADS_PUBLISHING:  ${{ github.event.inputs.enable_threads_publishing || 'false' }}
+          ENABLE_TOKEN_REFRESH:       'false'
         run: python threads.py
+
+      - name: Commit Threads drafts
+        run: |
+          git config --global user.name "Clarity Lab Bot"
+          git config --global user.email "bot@inneros.online"
+          git add data/threads_posts.csv
+          git diff --staged --quiet || git commit -m "🧵 Threads draft: $(date +'%Y-%m-%d')"
+          git push

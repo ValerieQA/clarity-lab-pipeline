@@ -32,4 +32,6 @@ jobs:
           CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
           IG_USER_ID:            ${{ secrets.IG_USER_ID }}
           IG_TOKEN:              ${{ secrets.IG_TOKEN }}
+          DRY_RUN:               'false'
+          ENABLE_INSTAGRAM_PUBLISHING: 'true'
         run: python stories.py

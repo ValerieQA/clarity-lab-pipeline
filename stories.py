@@ -10,12 +10,17 @@ import csv
 import re
 import tempfile
 import requests
+import logging
 from datetime import datetime
 from openai import OpenAI
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import cloudinary
 import cloudinary.uploader
+
+from http_utils import HttpClient
+from runtime_config import FeatureFlags
+from structured_logging import get_logger, log_event
 
 # ============================================================
 # CONFIG
@@ -31,6 +36,10 @@ IG_TOKEN           = os.environ["IG_TOKEN"]
 TOPICS_FILE        = "topics.csv"
 LOGO_DARK          = "config/logo_dark.png"
 LOGO_WHITE         = "config/logo_white.png"
+
+FLAGS = FeatureFlags.from_env()
+LOGGER = get_logger("stories")
+HTTP = HttpClient.from_flags(FLAGS, LOGGER)
 
 # Brand colors
 BRAND_CREAM        = (244, 241, 236)   # #F4F1EC
@@ -123,7 +132,7 @@ def get_story_type(index):
     return STORY_TYPES[index % len(STORY_TYPES)]
 
 def generate_story_text(topic_row, story_type):
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    client = OpenAI(api_key=OPENAI_API_KEY, max_retries=FLAGS.http_max_retries, timeout=FLAGS.http_timeout_seconds)
 
     type_instructions = {
         "question": """
@@ -337,12 +346,31 @@ def upload_story_to_cloudinary(image_path, title):
     public_id = f"CL_stories/CL_{safe_title}_story_{timestamp}"
 
     print("[CLOUDINARY] Uploading Story image...")
-    result = cloudinary.uploader.upload(
-        image_path,
-        public_id=public_id,
-        overwrite=False,
-        resource_type="image"
-    )
+    if FLAGS.dry_run:
+        planned_url = f"dry-run://cloudinary/{public_id}.jpg"
+        log_event(LOGGER, "dry_run_story_upload_skipped", platform="cloudinary", status="skipped", details={"public_id": public_id})
+        print(f"[DRY RUN][CLOUDINARY] Would upload Story image as {public_id}")
+        return planned_url
+
+    last_error = None
+    for attempt in range(1, FLAGS.http_max_retries + 1):
+        try:
+            result = cloudinary.uploader.upload(
+                image_path,
+                public_id=public_id,
+                overwrite=False,
+                resource_type="image"
+            )
+            break
+        except Exception as exc:
+            last_error = exc
+            if attempt >= FLAGS.http_max_retries:
+                raise
+            log_event(LOGGER, "cloudinary_story_upload_retry", logging.WARNING, platform="cloudinary", status="retrying", error=str(exc))
+            import time
+            time.sleep(2 ** (attempt - 1))
+    else:
+        raise last_error
 
     secure_url = result.get("secure_url")
     if not secure_url:
@@ -357,9 +385,14 @@ def upload_story_to_cloudinary(image_path, title):
 
 def publish_instagram_story(image_url):
     print("[INSTAGRAM STORY] Creating story container...")
+    if FLAGS.dry_run or not FLAGS.enable_instagram_publishing:
+        log_event(LOGGER, "instagram_story_publish_skipped", platform="instagram", status="skipped", details={"dry_run": FLAGS.dry_run, "enabled": FLAGS.enable_instagram_publishing, "image_url": image_url})
+        print("[DRY RUN][INSTAGRAM STORY] Would publish story")
+        return "dry-run-instagram-story-id"
 
-    container_response = requests.post(
+    container_response = HTTP.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media",
+        platform="instagram",
         data={
             "image_url": image_url,
             "media_type": "STORIES",
@@ -381,8 +414,9 @@ def publish_instagram_story(image_url):
     import time
     for attempt in range(1, 11):
         print(f"[INSTAGRAM STORY] Status check {attempt}/10...")
-        status_data = requests.get(
+        status_data = HTTP.get(
             f"https://graph.facebook.com/v19.0/{container_id}",
+            platform="instagram",
             params={"fields": "status_code,status", "access_token": IG_TOKEN}
         ).json()
 
@@ -397,8 +431,9 @@ def publish_instagram_story(image_url):
 
     # Publish
     print("[INSTAGRAM STORY] Publishing...")
-    result = requests.post(
+    result = HTTP.post(
         f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media_publish",
+        platform="instagram",
         data={
             "creation_id": container_id,
             "access_token": IG_TOKEN
@@ -440,7 +475,7 @@ def run_stories_pipeline():
 
     # Download master image from Cloudinary
     print(f"[STORY] Downloading master image: {master_url[:60]}...")
-    r = requests.get(master_url)
+    r = HTTP.get(master_url, platform="cloudinary")
     if r.status_code != 200:
         raise Exception(f"[STORY] Failed to download master image (HTTP {r.status_code}): {master_url}")
     with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
