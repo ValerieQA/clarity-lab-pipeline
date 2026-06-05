@@ -596,10 +596,21 @@ def run_pipeline():
     else:
         mark_topic_state(index, rows, post_url, cloudinary_url, state)
 
+    final_status = state.finalize().value
+    failed = [p for p, r in state.platform_results.items() if r.status == "failed"]
+
     print(f"\n{'='*60}")
-    print(f"✅ Done! {title}")
-    print(f"   {post_url}")
+    if failed:
+        print(f"⚠️  Done with failures! {title}")
+        print(f"   {post_url}")
+        print(f"   Failed platforms: {', '.join(failed)}")
+    else:
+        print(f"✅ Done! {title}")
+        print(f"   {post_url}")
     print(f"{'='*60}\n")
+
+    if final_status == "partial_failure":
+        raise SystemExit(1)
 
 if __name__ == "__main__":
     run_pipeline()
