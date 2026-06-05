@@ -136,11 +136,18 @@ def validate_instagram_token(
         _log_validation(logger, "instagram_token_validation_failed", result, "instagram")
         return result
 
-    url = f"https://graph.instagram.com/{config.api_version}/me"
+    # Business/Creator accounts use graph.facebook.com, not graph.instagram.com.
+    # graph.instagram.com is for Basic Display API (personal accounts only).
+    base_url = (
+        f"https://graph.facebook.com/{config.api_version}/{config.user_id}"
+        if config.user_id
+        else f"https://graph.facebook.com/{config.api_version}/me"
+    )
+    url = base_url
     try:
         response = http.get(
             url,
-            params={"fields": "id,username", "access_token": config.access_token},
+            params={"fields": "id,username,name", "access_token": config.access_token},
             platform="instagram",
         )
         data = response_json_or_raise(response, "INSTAGRAM TOKEN VALIDATION")
