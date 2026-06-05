@@ -70,11 +70,11 @@ jobs:
           server_address: smtp.gmail.com
           server_port: 465
           secure: true
-          username: ${{ secrets.NOTIFY_EMAIL }}
+          username: kovalchuk25@gmail.com
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
           subject: "❌ Clarity Lab retry failed — ${{ github.event.inputs.channel }}"
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          from: Clarity Lab Bot <${{ secrets.NOTIFY_EMAIL }}>
+          to: kovalchuk25@gmail.com
+          from: Clarity Lab Bot <kovalchuk25@gmail.com>
           body: |
             Retry attempt for channel "${{ github.event.inputs.channel }}" failed.
 

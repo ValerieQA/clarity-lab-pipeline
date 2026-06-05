@@ -53,7 +53,7 @@ jobs:
 
       - name: Send failure email
         env:
-          NOTIFY_EMAIL:       ${{ secrets.NOTIFY_EMAIL }}
+          NOTIFY_EMAIL:       kovalchuk25@gmail.com
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           RUN_URL:            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
