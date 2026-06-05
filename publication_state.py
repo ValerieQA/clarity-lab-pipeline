@@ -76,7 +76,8 @@ def ensure_topic_state_fields(rows: list[dict[str, Any]]) -> list[str]:
     ]:
         if field not in fieldnames:
             fieldnames.append(field)
-            for row in rows:
+        for row in rows:
+            if field not in row:
                 row[field] = ""
     return fieldnames
 
