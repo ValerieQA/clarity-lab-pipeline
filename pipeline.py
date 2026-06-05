@@ -24,6 +24,14 @@ from publication_state import PublicationState, write_topics
 from meta_tokens import validate_facebook_token, validate_instagram_token
 from runtime_config import FacebookConfig, FeatureFlags, InstagramConfig
 from structured_logging import get_logger, log_event
+from prompt_loader import (
+    load_prompt,
+    load_visual_journey,
+    load_accent_states,
+    IMAGE_PROMPT_PATH,
+    INSTAGRAM_PROMPT_PATH,
+    FACEBOOK_PROMPT_PATH,
+)
 
 # ============================================================
 # CONFIG
@@ -53,32 +61,13 @@ FACEBOOK_CONFIG = FacebookConfig.from_env()
 
 # ============================================================
 # VISUAL SYSTEM
+# Loaded from config/IMAGE_PROMPT.md — edit the file to update palettes/moods.
+# visual_index = published_count % len(VISUAL_JOURNEY)
+# where published_count = number of rows in topics.csv with Status == "Published"
 # ============================================================
 
-VISUAL_JOURNEY = [
-    {"name": "Morning Mist",   "mood": "fresh clarity, quiet beginning, soft light",          "palette": "mist blue, pale cream, light stone, soft grey-blue, airy white"},
-    {"name": "Pale Sky",       "mood": "lightness, openness, space to breathe",               "palette": "pale sky blue, cloud white, soft beige, muted horizon blue"},
-    {"name": "Sea Foam",       "mood": "airy calm, subtle movement, emotional spaciousness",  "palette": "sea foam green, blue-grey, soft cream, washed natural tones"},
-    {"name": "Soft Sage",      "mood": "gentle balance, grounded growth, natural quiet",      "palette": "soft sage, muted olive, cream, linen, warm grey"},
-    {"name": "Warm Leaf",      "mood": "natural warmth, subtle energy, living stillness",     "palette": "warm green, muted leaf, beige, soft gold, natural shadow"},
-    {"name": "Sand Dune",      "mood": "comfort, inner stability, warm ground",               "palette": "sand beige, dune cream, pale clay, soft taupe, warm light"},
-    {"name": "Honey Clay",     "mood": "soft warmth, nourishment, human presence",            "palette": "honey beige, clay, cream, warm ochre, muted caramel"},
-    {"name": "Linen Earth",    "mood": "earthy depth, quiet introspection, texture",          "palette": "linen, stone, earth beige, warm grey, muted brown"},
-    {"name": "Dust Rose",      "mood": "transition, softening, emotional nuance",             "palette": "dust rose, muted terracotta, soft beige, pale clay, warm shadow"},
-    {"name": "Dusty Blue",     "mood": "deepening, inner depth, calm concentration",          "palette": "dusty blue, slate blue, cream, soft grey, muted navy"},
-    {"name": "Deep Evening",   "mood": "reflection, quiet depth, elegant shadow",             "palette": "deep navy accents, dusty blue, warm cream, muted gold, soft shadow"},
-    {"name": "Twilight",       "mood": "integration, rest, pause before renewal",             "palette": "twilight blue, mauve-grey, muted lilac, soft peach, dusk cream"},
-    {"name": "Return To Mist", "mood": "renewal, clarity returning, a new cycle",             "palette": "mist blue, pale cream, soft grey-blue, quiet white, distant green"},
-]
-
-ACCENT_STATES = [
-    "muted terracotta",
-    "soft golden hour",
-    "dusty mauve",
-    "muted lilac",
-    "deep olive",
-    "ocean teal",
-]
+VISUAL_JOURNEY = load_visual_journey()
+ACCENT_STATES  = load_accent_states()
 
 def get_visual_state(index):
     return VISUAL_JOURNEY[index % len(VISUAL_JOURNEY)]
@@ -160,13 +149,9 @@ def mark_topic_state(index, rows, post_url, master_image_url, state: Publication
 # STEP 2: Generate content via GPT
 # ============================================================
 
-def load_prompt():
-    with open(PROMPT_FILE, "r", encoding="utf-8") as f:
-        return f.read()
-
 def generate_content(topic_row):
     client = OpenAI(api_key=OPENAI_API_KEY, max_retries=FLAGS.http_max_retries, timeout=FLAGS.http_timeout_seconds)
-    base_prompt = load_prompt()
+    base_prompt = load_prompt(PROMPT_FILE)
 
     user_message = (
         f"Topic: {topic_row['Topic / Working Title']}\n"
@@ -207,21 +192,14 @@ def parse_content(raw_text):
 def generate_image(title, core_observation, visual_state, accent_state):
     client = OpenAI(api_key=OPENAI_API_KEY)
 
-    image_prompt = (
-        f'Create a luxury editorial photograph for a reflective article titled "{title}". '
-        f'The visual scene must be inspired by the article theme: "{core_observation}". '
-        f'Visual journey state: {visual_state["name"]}. '
-        f'Mood: {visual_state["mood"]}. '
-        f'Palette direction: {visual_state["palette"]}. '
-        f'Optional accent: {accent_state}. '
-        f'No people. No faces. No silhouettes. No body parts. '
-        f'Use symbolic objects, architecture, natural forms, light, shadow, texture, space. '
-        f'Style: high-end editorial photography, luxury magazine aesthetic, refined minimalism. '
-        f'Lighting: natural light with strong depth and contrast. Deep shadows welcome. '
-        f'Not blurry. Not painterly. Not illustration. Not CGI. '
-        f'Looks like Architectural Digest, Kinfolk, or luxury editorial publication. '
-        f'Square format. '
-        f'No text. No logos. No letters. No symbols.'
+    base_image_prompt = load_prompt(IMAGE_PROMPT_PATH)
+    image_prompt = base_image_prompt.format(
+        title=title,
+        core_observation=core_observation,
+        visual_state_name=visual_state["name"],
+        visual_state_mood=visual_state["mood"],
+        visual_state_palette=visual_state["palette"],
+        accent_state=accent_state,
     )
 
     print(f"[GPT-IMAGE] Generating image (visual: {visual_state['name']})...")
@@ -467,6 +445,7 @@ def publish_to_instagram(caption, image_url):
     if not _ig_check.valid:
         log_event(LOGGER, "instagram_token_invalid_skipping", logging.ERROR, platform="instagram",
                   status="skipped", error=_ig_check.error)
+        print(f"[INSTAGRAM] Token invalid — skipping publish. Run retry after fixing IG_TOKEN secret.")
         raise Exception(f"[INSTAGRAM] Token invalid ({_ig_check.status}): {_ig_check.error}")
 
     container_response = HTTP.post(
@@ -515,6 +494,7 @@ def publish_to_facebook(message, image_url):
     if not _fb_check.valid:
         log_event(LOGGER, "facebook_token_invalid_skipping", logging.ERROR, platform="facebook",
                   status="skipped", error=_fb_check.error)
+        print(f"[FACEBOOK] Token invalid — skipping publish. Run retry after fixing FB_PAGE_TOKEN secret.")
         raise Exception(f"[FACEBOOK] Token invalid ({_fb_check.status}): {_fb_check.error}")
 
     result = HTTP.post(

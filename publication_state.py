@@ -67,6 +67,12 @@ def ensure_topic_state_fields(rows: list[dict[str, Any]]) -> list[str]:
         "Publication Errors",
         "IG Caption",
         "FB Message",
+        "Instagram Post ID",
+        "Facebook Post ID",
+        "Story ID",
+        "Last Error",
+        "Last Failed Channel",
+        "Retry Available",
     ]:
         if field not in fieldnames:
             fieldnames.append(field)

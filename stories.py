@@ -21,6 +21,7 @@ import cloudinary.uploader
 from http_utils import HttpClient
 from runtime_config import FeatureFlags
 from structured_logging import get_logger, log_event
+from prompt_loader import STORIES_PROMPT_PATH, load_prompt
 
 # ============================================================
 # CONFIG
@@ -134,48 +135,12 @@ def get_story_type(index):
 def generate_story_text(topic_row, story_type):
     client = OpenAI(api_key=OPENAI_API_KEY, max_retries=FLAGS.http_max_retries, timeout=FLAGS.http_timeout_seconds)
 
-    type_instructions = {
-        "question": """
-Write one powerful question for an Instagram Story.
-The question should:
-- Feel personally recognizable
-- Not have an obvious answer
-- Create a moment of pause
-- Connect to the topic without explaining it
-- Be 10-20 words maximum
-- End with a question mark
-Format: just the question, nothing else.
-""",
-        "observation": """
-Write one quiet observation for an Instagram Story.
-The observation should:
-- Feel like something the reader already knows but hasn't named
-- Be calm, precise, non-judgmental
-- Not give advice or explain
-- Be 15-25 words maximum
-- Feel like a mirror, not a lesson
-Format: just the observation, nothing else.
-""",
-        "invitation": """
-Write one soft invitation for an Instagram Story.
-The invitation should:
-- Connect the topic to what Clarity Lab offers
-- Feel warm, not salesy
-- End with: "This is what Clarity Lab was built for."
-- Be 20-30 words maximum before the final line
-Format: the invitation text, then on a new line: "This is what Clarity Lab was built for."
-"""
-    }
-
-    prompt = f"""
-You are writing for Clarity Lab — a reflective AI assistant brand.
-Tone: quiet, precise, human, non-marketing, editorial.
-
-Topic: {topic_row['Topic / Working Title']}
-Core observation: {topic_row['Core Observation']}
-
-{type_instructions[story_type]}
-"""
+    stories_prompt = load_prompt(STORIES_PROMPT_PATH)
+    prompt = stories_prompt.format(
+        topic=topic_row['Topic / Working Title'],
+        core_observation=topic_row['Core Observation'],
+        story_type=story_type,
+    )
 
     print(f"[GPT] Generating Story text (type: {story_type})...")
     response = client.chat.completions.create(
