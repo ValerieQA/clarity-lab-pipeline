@@ -47,8 +47,42 @@ def load_topics() -> tuple[list[dict], list[str]]:
 
 def find_failed_topic(rows: list[dict], channel: str) -> dict | None:
     col = f"{channel.capitalize()} Status"
+    # Primary: explicit failed status.
     candidates = [r for r in rows if r.get(col, "").strip().lower() == "failed"]
+    if candidates:
+        return candidates[-1]
+    # Fallback: partial_failure pipeline with no channel status set yet + image saved.
+    candidates = [
+        r for r in rows
+        if r.get("Pipeline State", "").strip() in ("partial_failure", "")
+        and r.get("Workflow Status", "").strip().lower() in ("partial_failure", "")
+        and r.get("Status", "").strip().lower() in ("partial failure", "partial_failure")
+        and r.get("Master Image URL", "").strip()
+        and r.get(col, "").strip() == ""
+    ]
     return candidates[-1] if candidates else None
+
+
+def resolve_ig_caption(topic: dict) -> str:
+    """Return saved IG Caption or reconstruct from Instagram Article Draft."""
+    caption = topic.get("IG Caption", "").strip()
+    if caption:
+        return caption
+    draft = topic.get("Instagram Article Draft", "").strip()
+    if draft:
+        hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
+        return f"{draft}\n\n{hashtags}"
+    return topic.get("Topic / Working Title", "").strip()
+
+
+def resolve_fb_message(topic: dict) -> str:
+    """Return saved FB Message or reconstruct from Instagram Article Draft + URL."""
+    msg = topic.get("FB Message", "").strip()
+    if msg:
+        return msg
+    draft = topic.get("Instagram Article Draft", topic.get("Topic / Working Title", "")).strip()
+    post_url = topic.get("Website Published URL", "").strip()
+    return f"{draft[:500]}\n\n{post_url}".strip()
 
 
 def update_topic_status(rows: list[dict], topic: dict, channel: str, status: str, error: str = "") -> None:
@@ -82,7 +116,7 @@ def update_topic_status(rows: list[dict], topic: dict, channel: str, status: str
 
 def retry_instagram(topic: dict, flags: FeatureFlags, dry_run: bool) -> str:
     image_url = topic.get("Master Image URL", "").strip()
-    caption   = topic.get("IG Caption", "").strip()
+    caption   = resolve_ig_caption(topic)
     if not image_url:
         raise ValueError("Master Image URL is empty — cannot retry without saved image.")
     if not caption:
@@ -135,7 +169,7 @@ def retry_instagram(topic: dict, flags: FeatureFlags, dry_run: bool) -> str:
 
 def retry_facebook(topic: dict, flags: FeatureFlags, dry_run: bool) -> str:
     image_url  = topic.get("Master Image URL", "").strip()
-    fb_message = topic.get("FB Message", "").strip()
+    fb_message = resolve_fb_message(topic)
     if not image_url:
         raise ValueError("Master Image URL is empty — cannot retry without saved image.")
     if not fb_message:
