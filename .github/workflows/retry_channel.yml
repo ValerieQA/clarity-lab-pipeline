@@ -29,10 +29,6 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Random delay (0–30 min)
-        if: ${{ github.event.inputs.dry_run == 'false' }}
-        run: python -c "import random,time; d=random.randint(0,1800); print(f'Sleeping {d}s ({d//60}m {d%60}s)'); time.sleep(d)"
-
       - name: Retry ${{ github.event.inputs.channel }}
         env:
           IG_USER_ID:           ${{ secrets.IG_USER_ID }}
