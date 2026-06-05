@@ -1,0 +1,83 @@
+name: Clarity Lab — Retry Channel
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Channel to retry'
+        required: true
+        type: choice
+        options: [instagram, facebook, threads]
+      dry_run:
+        description: 'Dry run (validate only)?'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: pip install -r requirements.txt
+
+      - name: Random delay (0–30 min)
+        if: ${{ github.event.inputs.dry_run == 'false' }}
+        run: python -c "import random,time; d=random.randint(0,1800); print(f'Sleeping {d}s ({d//60}m {d%60}s)'); time.sleep(d)"
+
+      - name: Retry ${{ github.event.inputs.channel }}
+        env:
+          IG_USER_ID:           ${{ secrets.IG_USER_ID }}
+          IG_TOKEN:             ${{ secrets.IG_TOKEN }}
+          FB_PAGE_ID:           ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN:        ${{ secrets.FB_PAGE_TOKEN }}
+          FACEBOOK_APP_ID:      ${{ secrets.FACEBOOK_APP_ID }}
+          FACEBOOK_APP_SECRET:  ${{ secrets.FACEBOOK_APP_SECRET }}
+          THREADS_USER_ID:      ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_TOKEN:        ${{ secrets.THREADS_TOKEN }}
+          THREADS_API_VERSION:  v1.0
+        run: |
+          set -o pipefail
+          FLAG=${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+          python scripts/retry_channel.py --channel ${{ github.event.inputs.channel }} $FLAG 2>&1 | tee /tmp/retry_out.txt
+          echo "## Retry: ${{ github.event.inputs.channel }} — $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/retry_out.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit updated topics.csv
+        if: ${{ github.event.inputs.dry_run == 'false' }}
+        run: |
+          git config user.name  "Clarity Lab Bot"
+          git config user.email "bot@inneros.online"
+          git add topics.csv
+          git diff --staged --quiet || git commit -m "🔁 Retry ${{ github.event.inputs.channel }}: $(date -u +'%Y-%m-%d %H:%M')"
+          git push
+
+      - name: Email alert on retry failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.NOTIFY_EMAIL }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "❌ Clarity Lab retry failed — ${{ github.event.inputs.channel }}"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: Clarity Lab Bot <${{ secrets.NOTIFY_EMAIL }}>
+          body: |
+            Retry attempt for channel "${{ github.event.inputs.channel }}" failed.
+
+            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Check the logs for error details.

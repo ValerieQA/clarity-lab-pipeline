@@ -144,9 +144,6 @@ def mark_topic_state(index, rows, post_url, master_image_url, state: Publication
     rows[index]["Status"] = "Published" if final_status == "completed" else "Partial Failure" if final_status == "partial_failure" else rows[index].get("Status", "Ready")
     rows[index]["Website Published URL"] = post_url
     rows[index]["Publish Status Code"] = "200" if final_status == "completed" else "207" if final_status == "partial_failure" else "500"
-    if master_image_url:
-        rows[index]["Master Image URL"] = master_image_url
-
     errors = []
     for platform, result in state.platform_results.items():
         rows[index][f"{platform.capitalize()} Status"] = result.status
@@ -574,6 +571,16 @@ def run_pipeline():
 
     hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
     ig_caption = f"{ig_text}\n\n{hashtags}"
+    fb_text    = ig_text[:500] if len(ig_text) > 500 else ig_text
+    fb_message = f"{fb_text}\n\n{post_url}"
+
+    # Save captions at generation time — before any publish attempt.
+    if not FLAGS.dry_run:
+        rows[index]["IG Caption"]      = ig_caption
+        rows[index]["FB Message"]      = fb_message
+        rows[index]["Master Image URL"] = cloudinary_url
+        write_topics(TOPICS_FILE, rows)
+
     try:
         ig_id = publish_to_instagram(ig_caption, cloudinary_url)
         state.set_platform("instagram", FLAGS.enable_instagram_publishing and not FLAGS.dry_run, "published", external_id=ig_id)
@@ -581,8 +588,6 @@ def run_pipeline():
         state.set_platform("instagram", FLAGS.enable_instagram_publishing and not FLAGS.dry_run, "failed", error=str(exc))
         log_event(LOGGER, "instagram_publish_failed", logging.ERROR, platform="instagram", status="failed", error=str(exc))
 
-    fb_text = ig_text[:500] if len(ig_text) > 500 else ig_text
-    fb_message = f"{fb_text}\n\n{post_url}"
     try:
         fb_id = publish_to_facebook(fb_message, cloudinary_url)
         state.set_platform("facebook", FLAGS.enable_facebook_publishing and not FLAGS.dry_run, "published", external_id=fb_id)

@@ -49,20 +49,61 @@ jobs:
     needs: publish
     if: failure()
     steps:
+      - uses: actions/checkout@v4
+
       - name: Send failure email
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
-          username: ${{ secrets.NOTIFY_EMAIL }}
-          password: ${{ secrets.GMAIL_APP_PASSWORD }}
-          subject: "⚠️ Clarity Lab pipeline failed — ${{ github.run_id }}"
-          to: ${{ secrets.NOTIFY_EMAIL }}
-          from: Clarity Lab Bot <${{ secrets.NOTIFY_EMAIL }}>
-          body: |
-            One or more platforms failed in the Clarity Lab content pipeline.
+        env:
+          NOTIFY_EMAIL:       ${{ secrets.NOTIFY_EMAIL }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RUN_URL:            https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'EOF'
+          import csv, os, smtplib
+          from email.mime.text import MIMEText
+          from pathlib import Path
 
-            Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          email    = os.environ["NOTIFY_EMAIL"]
+          password = os.environ["GMAIL_APP_PASSWORD"]
+          run_url  = os.environ["RUN_URL"]
 
-            Check the logs for details on which platform failed and why.
+          # Read per-channel status from topics.csv
+          rows = []
+          try:
+              with open("topics.csv", newline="", encoding="utf-8") as f:
+                  rows = list(csv.DictReader(f))
+          except Exception:
+              pass
+
+          topic = rows[-1] if rows else {}
+          channels = ["Wix", "Instagram", "Facebook", "Threads"]
+          status_lines = "\n".join(
+              f"  {c}: {topic.get(f'{c} Status', 'unknown')}" for c in channels
+          )
+          errors = topic.get("Publication Errors", "none")
+          title  = topic.get("Topic / Working Title", "unknown")
+
+          body = f"""Clarity Lab pipeline finished with partial failure.
+
+          Topic: {title}
+
+          Channel status:
+          {status_lines}
+
+          Errors:
+            {errors}
+
+          Run logs: {run_url}
+
+          Use Actions → Retry Channel to republish the failed platform.
+          """
+
+          msg = MIMEText(body)
+          msg["Subject"] = f"⚠️ Clarity Lab pipeline partial failure — {title[:40]}"
+          msg["From"]    = f"Clarity Lab Bot <{email}>"
+          msg["To"]      = email
+
+          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+              smtp.login(email, password)
+              smtp.send_message(msg)
+          print("Email sent.")
+          EOF
