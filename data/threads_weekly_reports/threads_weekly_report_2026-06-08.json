@@ -1,0 +1,108 @@
+{
+  "generated_at": "2026-06-08T11:51:22.328251+00:00",
+  "window_start": "2026-06-01T11:51:22.328251+00:00",
+  "published_posts_count": 13,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_c836d265f8fb289f",
+      "external_threads_id": "17873795115505409",
+      "score": 0,
+      "text_preview": "Do you ever notice that anxiety seems to thrive in the fog of undefined feelings? It's as if the mind stumbles in the dark, searching for clarity. But when you name what you feel, something shifts. It’s not just about words; it’s about crea"
+    },
+    {
+      "post_id": "threads_8143272af559eaae",
+      "external_threads_id": "18316332622286719",
+      "score": 0,
+      "text_preview": "Many find their anxiety peaks when they can't quite pinpoint what they're feeling. It's like being in a dense fog, where every direction feels uncertain. Interestingly, the simple act of putting these feelings into words can dramatically ch"
+    },
+    {
+      "post_id": "threads_f7c38c0f39fcb3a4",
+      "external_threads_id": "18105246610812659",
+      "score": 0,
+      "text_preview": "Many feel anxious when emotions are unclear, like trying to solve a puzzle without pieces. Naming emotions connects them, creating a clearer picture. Clarity reduces the unknown, offering calm by turning scattered feelings into a recognizab"
+    },
+    {
+      "post_id": "threads_a96f41ca81b7c04e",
+      "external_threads_id": "17978974580860828",
+      "score": 0,
+      "text_preview": "Many people find their anxiety intensifies when emotions are unnamed. Clarity acts like a mental compass, reducing inner chaos. When feelings are defined, they become navigable, restoring calm. It's not the solution but a map that reveals f"
+    },
+    {
+      "post_id": "threads_08268cfcfc5faf90",
+      "external_threads_id": "18140353930533947",
+      "score": 0,
+      "text_preview": "Many feel a wave of calm when they articulate their emotions. It's not just naming feelings; it's about reducing the chaos within. When an internal landscape is mapped with clear words, anxiety loses its grip, and a sense of orientation beg"
+    }
+  ],
+  "most_common_themes": [
+    [
+      "emotions",
+      13
+    ],
+    [
+      "chaos",
+      10
+    ],
+    [
+      "anxiety",
+      9
+    ],
+    [
+      "feelings",
+      9
+    ],
+    [
+      "naming",
+      9
+    ],
+    [
+      "words",
+      5
+    ],
+    [
+      "sense",
+      5
+    ],
+    [
+      "orientation",
+      5
+    ],
+    [
+      "solving",
+      4
+    ],
+    [
+      "landscape",
+      4
+    ]
+  ],
+  "strongest_comments": [
+    {
+      "comment_id": "18204342811353114",
+      "post_id": "18101779022025225",
+      "author": "pr_sveta.g",
+      "comment_text": "Where do you start when that clarity isn't there? When there's brain fog. And how do you know what it means if you have a headache?",
+      "created_at": "2026-06-08T06:29:52+0000",
+      "collected_at": "2026-06-08T10:55:35.405085+00:00",
+      "weight": "2"
+    }
+  ],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind emotions",
+    "Explore the hidden pattern behind chaos",
+    "Explore the hidden pattern behind anxiety",
+    "Explore the hidden pattern behind feelings",
+    "Explore the hidden pattern behind naming"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'emotions'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    },
+    {
+      "recommendation": "Add one prompt instruction to invite grounded audience reflection, not advice-giving.",
+      "rationale": "The strongest comments tend to contain personal tension and may benefit from reflective follow-up prompts."
+    }
+  ]
+}
