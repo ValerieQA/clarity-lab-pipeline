@@ -403,6 +403,7 @@ def publish_to_wix(title, website_text, cloudinary_url):
                 },
                 "featured": False,
                 "hashtags": ["clarity", "reflection", "selfawareness", "InnerOS", "mindfulness"],
+                "categoryIds": ["30d2d3ab-fde8-4f90-b197-15d126335622"],
                 "memberId": "4d7e0085-753e-4aee-b7c6-ed66431fd9c6"
             }
         }
