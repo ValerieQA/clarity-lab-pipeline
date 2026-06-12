@@ -119,7 +119,11 @@ def check_instagram(flags: FeatureFlags, http: HttpClient) -> int:
     days_left = (expires_in // 86_400) if expires_in is not None else None
     print(f"[INSTAGRAM] Token valid (user={result.username}, expires_in={expires_in}s).")
 
-    if expires_in is not None and expires_in >= REFRESH_THRESHOLD_SECONDS:
+    if expires_in is None:
+        print("[INSTAGRAM] Token valid, expiry unknown (no expires_in returned by API). OK.")
+        return 0
+
+    if expires_in >= REFRESH_THRESHOLD_SECONDS:
         print(f"[INSTAGRAM] Token not due for refresh (>{REFRESH_THRESHOLD_DAYS}d remaining). Done.")
         return 0
 
