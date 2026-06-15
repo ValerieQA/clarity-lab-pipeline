@@ -1,0 +1,108 @@
+{
+  "generated_at": "2026-06-15T13:00:38.011547+00:00",
+  "window_start": "2026-06-08T13:00:38.011547+00:00",
+  "published_posts_count": 12,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_0de8903b6bf4b2e1",
+      "external_threads_id": "18110592343912366",
+      "score": 0,
+      "text_preview": "Many find themselves trapped in circular thinking, not due to flawed logic, but because their minds revisit ideas not yet fully grasped. It's a loop of seeking clarity, not stagnation. It's the mind's way of circling what it cannot yet hold"
+    },
+    {
+      "post_id": "threads_63449fcec72c84b7",
+      "external_threads_id": "18267624892291459",
+      "score": 0,
+      "text_preview": "Many find themselves thinking in circles, not due to flawed logic, but because the mind lingers on what it hasn't grasped fully. It's a loop that signals something unresolved, a desire to see clearly before moving forward. Recognition, not "
+    },
+    {
+      "post_id": "threads_167b8f7393e7a13d",
+      "external_threads_id": "18185839948382210",
+      "score": 0,
+      "text_preview": "Many find themselves stuck in circular thoughts, not due to flawed logic, but because the mind revisits what it can't yet grasp fully. It's the brain's way of circling back to an idea, seeking clarity before it can progress. Recognizing thi"
+    },
+    {
+      "post_id": "threads_83253e0dd066dc69",
+      "external_threads_id": "18101751488329711",
+      "score": 0,
+      "text_preview": "People often view circular thinking as a failure of logic. Yet, it's sometimes the mind revisiting an idea it hasn't fully grasped. It's not about being stuck but rather about seeking clarity before moving forward. Why do certain thoughts l"
+    },
+    {
+      "post_id": "threads_bd2df97410c360ec",
+      "external_threads_id": "18589731286015096",
+      "score": 0,
+      "text_preview": "Many find themselves revisiting the same thoughts, not due to a lack of logic but because the mind circles what it cannot yet grasp. It's not always a failure, but a sign of something significant awaiting clearer understanding."
+    }
+  ],
+  "most_common_themes": [
+    [
+      "understanding",
+      8
+    ],
+    [
+      "logic",
+      6
+    ],
+    [
+      "fully",
+      6
+    ],
+    [
+      "knowing",
+      6
+    ],
+    [
+      "living",
+      6
+    ],
+    [
+      "themselves",
+      5
+    ],
+    [
+      "recognition",
+      5
+    ],
+    [
+      "often",
+      5
+    ],
+    [
+      "process",
+      5
+    ],
+    [
+      "action",
+      5
+    ]
+  ],
+  "strongest_comments": [
+    {
+      "comment_id": "17997564221779437",
+      "post_id": "17978974580860828",
+      "author": "neuroguidejourney",
+      "comment_text": "What becomes visible in NeuroGuide Journey is that naming internal states reduces cognitive uncertainty load.\n\n→ unstructured emotion increases internal prediction effort\n→ labeling reduces ambiguity in emotional processing\n→ and clarity improves navigation of internal experience\n\nSo it’s not just defining feelings.\n\nIt’s reducing system noise through structured internal mapping.",
+      "created_at": "2026-06-08T13:27:12+0000",
+      "collected_at": "2026-06-08T15:22:42.324422+00:00",
+      "weight": "3"
+    }
+  ],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind understanding",
+    "Explore the hidden pattern behind logic",
+    "Explore the hidden pattern behind fully",
+    "Explore the hidden pattern behind knowing",
+    "Explore the hidden pattern behind living"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'understanding'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    },
+    {
+      "recommendation": "Add one prompt instruction to invite grounded audience reflection, not advice-giving.",
+      "rationale": "The strongest comments tend to contain personal tension and may benefit from reflective follow-up prompts."
+    }
+  ]
+}
