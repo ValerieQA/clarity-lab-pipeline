@@ -31,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from strategy.strategy_analyzer import analyze as run_analysis
-from strategy.research_generator import generate as run_research
+from strategy.research_generator import run as run_research
 
 logger = logging.getLogger("strategy_rebuilder")
 
