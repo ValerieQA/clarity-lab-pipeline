@@ -24,27 +24,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run pipeline health check
-        env:
-          WIX_SITE_ID:          ${{ secrets.WIX_SITE_ID }}
-          WIX_API_KEY:          ${{ secrets.WIX_API_KEY }}
-          IG_USER_ID:           ${{ secrets.IG_USER_ID }}
-          IG_TOKEN:             ${{ secrets.IG_TOKEN }}
-          FB_PAGE_ID:           ${{ secrets.FB_PAGE_ID }}
-          FB_PAGE_TOKEN:        ${{ secrets.FB_PAGE_TOKEN }}
-          THREADS_USER_ID:      ${{ secrets.THREADS_USER_ID }}
-          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
-          OPENAI_API_KEY:       ${{ secrets.OPENAI_API_KEY }}
-          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
-          CLOUDINARY_API_KEY:   ${{ secrets.CLOUDINARY_API_KEY }}
-          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
-          GMAIL_SENDER:         ${{ secrets.GMAIL_SENDER }}
-          GMAIL_APP_PASSWORD:   ${{ secrets.GMAIL_APP_PASSWORD }}
-          REPORT_EMAIL_TO:      ${{ secrets.REPORT_EMAIL_TO }}
-          SEND_EMAIL_ALERTS:    'false'
-        run: python3 -m strategy.pipeline_health
-        continue-on-error: true
-
       - name: Generate and email daily report
         env:
           WIX_SITE_ID:          ${{ secrets.WIX_SITE_ID }}
