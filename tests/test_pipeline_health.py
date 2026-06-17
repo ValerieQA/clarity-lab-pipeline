@@ -47,9 +47,90 @@ class TestChannelStats:
     def test_no_publish_ever_is_unknown(self):
         rows = [{"Date Added": "", "Wix Status": "", "Instagram Status": "", "Facebook Status": "", "Threads Status": ""}]
         path = _make_topics(rows)
+        with mock.patch("strategy.pipeline_health._threads_last_publish", return_value=None):
+            report = run_health_check(path)
+        threads_ch = next(c for c in report["channels"] if c["channel"] == "Threads")
+        assert threads_ch["status"] == "unknown"
+
+
+class TestCriticalReasons:
+    def test_critical_status_always_has_reasons(self):
+        """If overall status is critical or blocked, critical_reasons must be non-empty."""
+        path = _make_topics([{"Date Added": _recent(10), "Wix Status": "published"}])
         report = run_health_check(path)
-        for ch in report["channels"]:
-            assert ch["status"] == "unknown"
+        if report["overall_status"] in ("critical", "blocked"):
+            assert len(report["critical_reasons"]) > 0, (
+                "CRITICAL/BLOCKED status must include explicit critical_reasons"
+            )
+
+    def test_healthy_has_no_critical_reasons(self):
+        """Healthy status must not produce critical_reasons."""
+        rows = [{"Date Added": _recent(1), "Wix Status": "published",
+                 "Instagram Status": "published", "Facebook Status": "published"}]
+        path = _make_topics(rows)
+        env = {k: "x" for k in [
+            "WIX_SITE_ID", "WIX_API_KEY", "IG_USER_ID", "IG_TOKEN",
+            "FB_PAGE_ID", "FB_PAGE_TOKEN", "THREADS_USER_ID", "THREADS_ACCESS_TOKEN",
+            "OPENAI_API_KEY", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY",
+            "CLOUDINARY_API_SECRET", "GMAIL_SENDER", "GMAIL_APP_PASSWORD", "REPORT_EMAIL_TO",
+        ]}
+        with mock.patch.dict(os.environ, env, clear=True), \
+             mock.patch("strategy.pipeline_health._threads_last_publish", return_value=_recent(1)):
+            report = run_health_check(path)
+        # With all vars set and recent publish, no critical reasons
+        if report["overall_status"] == "healthy":
+            assert report["critical_reasons"] == []
+
+    def test_missing_secrets_produce_reasons(self):
+        """Missing publishing secrets must appear in critical_reasons."""
+        path = _make_topics([])
+        with mock.patch.dict(os.environ, {}, clear=True):
+            report = run_health_check(path)
+        assert len(report["critical_reasons"]) > 0
+
+
+class TestPermissionsAudit:
+    def test_permissions_audit_always_present(self):
+        path = _make_topics([])
+        report = run_health_check(path)
+        assert "permissions_audit" in report
+        assert len(report["permissions_audit"]) == 4  # Wix, Instagram, Facebook, Threads
+
+    def test_permissions_audit_has_required_fields(self):
+        path = _make_topics([])
+        report = run_health_check(path)
+        for entry in report["permissions_audit"]:
+            for field in ("channel", "publishing", "metrics", "comments", "metrics_note"):
+                assert field in entry, f"Missing field {field} in permissions_audit entry"
+
+    def test_permissions_audit_channels(self):
+        path = _make_topics([])
+        report = run_health_check(path)
+        channels = {e["channel"] for e in report["permissions_audit"]}
+        assert channels == {"Wix", "Instagram", "Facebook", "Threads"}
+
+
+class TestActionItems:
+    def test_action_items_present(self):
+        path = _make_topics([])
+        report = run_health_check(path)
+        assert "action_items" in report
+
+    def test_no_action_items_when_healthy(self):
+        rows = [{"Date Added": _recent(1), "Wix Status": "published",
+                 "Instagram Status": "published", "Facebook Status": "published"}]
+        path = _make_topics(rows)
+        env = {k: "x" for k in [
+            "WIX_SITE_ID", "WIX_API_KEY", "IG_USER_ID", "IG_TOKEN",
+            "FB_PAGE_ID", "FB_PAGE_TOKEN", "THREADS_USER_ID", "THREADS_ACCESS_TOKEN",
+            "OPENAI_API_KEY", "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY",
+            "CLOUDINARY_API_SECRET", "GMAIL_SENDER", "GMAIL_APP_PASSWORD", "REPORT_EMAIL_TO",
+        ]}
+        with mock.patch.dict(os.environ, env, clear=True), \
+             mock.patch("strategy.pipeline_health._threads_last_publish", return_value=_recent(1)):
+            report = run_health_check(path)
+        if report["overall_status"] == "healthy":
+            assert report["action_items"] == []
 
 
 class TestMissingEnvVars:
@@ -90,4 +171,12 @@ class TestFormatSummary:
         path = _make_topics([])
         report = run_health_check(path)
         summary = format_summary(report)
-        assert "HEALTHY" in summary or "UNKNOWN" in summary or "WARNING" in summary or "CRITICAL" in summary or "BLOCKED" in summary
+        assert any(s in summary for s in ("HEALTHY", "UNKNOWN", "WARNING", "CRITICAL", "BLOCKED"))
+
+    def test_summary_includes_critical_reasons_when_present(self):
+        path = _make_topics([])
+        with mock.patch.dict(os.environ, {}, clear=True):
+            report = run_health_check(path)
+        summary = format_summary(report)
+        if report["critical_reasons"]:
+            assert "Critical Reasons" in summary

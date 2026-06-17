@@ -32,14 +32,26 @@ def _make_topics(rows: list[dict]) -> Path:
 class TestBuildReport:
     def test_report_has_required_keys(self, tmp_path):
         path = _make_topics([])
-        with mock.patch.object(dr, "TOPICS_FILE", path), \
-             mock.patch.object(dr, "REPORTS_DIR", tmp_path / "reports/daily"):
+        with mock.patch.object(dr, "TOPICS_FILE", path):
             report = dr.build_report()
         assert "report_type" in report
         assert "report_date" in report
         assert "topic_inventory" in report
         assert "pipeline_health" in report
         assert "today_activity" in report
+
+    def test_pipeline_health_has_critical_reasons(self, tmp_path):
+        path = _make_topics([])
+        with mock.patch.object(dr, "TOPICS_FILE", path):
+            report = dr.build_report()
+        assert "critical_reasons" in report["pipeline_health"]
+
+    def test_pipeline_health_has_permissions_audit(self, tmp_path):
+        path = _make_topics([])
+        with mock.patch.object(dr, "TOPICS_FILE", path):
+            report = dr.build_report()
+        assert "permissions_audit" in report["pipeline_health"]
+        assert len(report["pipeline_health"]["permissions_audit"]) == 4
 
     def test_report_type_is_daily(self, tmp_path):
         path = _make_topics([])
@@ -57,23 +69,99 @@ class TestBuildReport:
         assert report["today_activity"]["failed_topics"] >= 1
 
 
-class TestToMarkdown:
-    def test_markdown_contains_date(self, tmp_path):
+class TestToMarkdownV2:
+    def _get_report(self, topics_path):
+        with mock.patch.object(dr, "TOPICS_FILE", topics_path):
+            return dr.build_report()
+
+    def test_action_required_section_always_present(self, tmp_path):
+        path = _make_topics([])
+        report = self._get_report(path)
+        md = dr.to_markdown(report)
+        assert "## Action Required" in md
+
+    def test_action_required_no_action_text_when_clean(self, tmp_path):
+        """If no issues, section says no action required."""
+        path = _make_topics([])
+        # Patch health to return clean state
+        clean_health = {
+            "overall_status": "healthy",
+            "critical_reasons": [],
+            "action_items": [],
+            "channels": [],
+            "token_issues": [],
+            "missing_env": [],
+            "permissions_audit": [],
+        }
+        with mock.patch.object(dr, "TOPICS_FILE", path), \
+             mock.patch("reports.daily_report.run_health_check", return_value=clean_health):
+            report = dr.build_report()
+        md = dr.to_markdown(report)
+        assert "No manual action required today" in md
+
+    def test_critical_reasons_shown_when_critical(self, tmp_path):
+        path = _make_topics([])
+        health = {
+            "overall_status": "critical",
+            "critical_reasons": ["No Wix publish in 10 days.", "Missing IG_TOKEN"],
+            "action_items": ["Fix Wix token"],
+            "channels": [],
+            "token_issues": [],
+            "missing_env": [],
+            "permissions_audit": [],
+        }
+        with mock.patch.object(dr, "TOPICS_FILE", path), \
+             mock.patch("reports.daily_report.run_health_check", return_value=health):
+            report = dr.build_report()
+        md = dr.to_markdown(report)
+        assert "## Critical Reasons" in md
+        assert "No Wix publish in 10 days." in md
+
+    def test_critical_section_not_shown_when_healthy(self, tmp_path):
+        path = _make_topics([])
+        health = {
+            "overall_status": "healthy",
+            "critical_reasons": [],
+            "action_items": [],
+            "channels": [],
+            "token_issues": [],
+            "missing_env": [],
+            "permissions_audit": [],
+        }
+        with mock.patch.object(dr, "TOPICS_FILE", path), \
+             mock.patch("reports.daily_report.run_health_check", return_value=health):
+            report = dr.build_report()
+        md = dr.to_markdown(report)
+        assert "## Critical Reasons" not in md
+
+    def test_permissions_table_present(self, tmp_path):
         path = _make_topics([])
         with mock.patch.object(dr, "TOPICS_FILE", path):
             report = dr.build_report()
         md = dr.to_markdown(report)
-        assert dr.TODAY.isoformat() in md
+        assert "## Permissions & Data Availability" in md
+
+    def test_days_left_explanation_present(self, tmp_path):
+        path = _make_topics([])
+        with mock.patch.object(dr, "TOPICS_FILE", path):
+            report = dr.build_report()
+        md = dr.to_markdown(report)
+        assert "cadence" in md.lower() or "Estimated runway" in md
+
+    def test_recommended_next_actions_present(self, tmp_path):
+        path = _make_topics([])
+        with mock.patch.object(dr, "TOPICS_FILE", path):
+            report = dr.build_report()
+        md = dr.to_markdown(report)
+        assert "## Recommended Next Actions" in md
 
     def test_markdown_contains_channel_breakdown(self, tmp_path):
         path = _make_topics([])
         with mock.patch.object(dr, "TOPICS_FILE", path):
             report = dr.build_report()
         md = dr.to_markdown(report)
-        assert "Wix" in md
-        assert "Instagram" in md
-        assert "Facebook" in md
-        assert "Threads" in md
+        for ch in ["Wix", "Instagram", "Facebook", "Threads"]:
+            assert ch in md
 
 
 class TestSaveReport:

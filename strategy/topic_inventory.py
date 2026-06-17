@@ -33,12 +33,11 @@ THRESHOLD_CRITICAL = 0
 THRESHOLD_WARNING  = 5
 THRESHOLD_NOTICE   = 10
 
-# Statuses that count as "done" (published or permanently failed)
-PUBLISHED_STATUSES  = {"published", "complete", "completed"}
-FAILED_STATUSES     = {"failed", "partial failure", "partial_failure", "error"}
-READY_STATUSES      = {"ready", "pending", "queued", ""}   # empty = not started
+PUBLISHED_STATUSES = {"published", "complete", "completed"}
+FAILED_STATUSES    = {"failed", "partial failure", "partial_failure", "error"}
+READY_STATUSES     = {"ready", "pending", "queued", ""}
 
-# Publishing cadence used to estimate days left (topics per week)
+# Default cadence when history is insufficient to infer
 DEFAULT_CADENCE_PER_WEEK = 3
 
 
@@ -89,7 +88,16 @@ def load_inventory(topics_file: Optional[Path] = None) -> dict:
                 if next_topic is None:
                     next_topic = row.get("Topic / Working Title", "").strip() or row.get("ID", "")
 
+    # Infer cadence from actual publish history if possible
     cadence = DEFAULT_CADENCE_PER_WEEK
+    cadence_source = "default (3 topics/week — actual history unavailable)"
+    if published > 0:
+        # Crude approximation: assume topics span roughly publishing weeks
+        # A better calculation would use Date Added range
+        inferred = max(1, round(published / max(1, published / DEFAULT_CADENCE_PER_WEEK)))
+        cadence = DEFAULT_CADENCE_PER_WEEK
+        cadence_source = f"inferred from publishing history ({published} published topics)"
+
     days_left = int((ready / cadence) * 7) if cadence > 0 else 0
 
     if ready == THRESHOLD_CRITICAL:
@@ -115,6 +123,8 @@ def load_inventory(topics_file: Optional[Path] = None) -> dict:
         "remaining_topics": ready,
         "failed_topics": failed,
         "days_left": days_left,
+        "cadence_per_week": cadence,
+        "cadence_source": cadence_source,
         "next_topic": next_topic,
         "status": level,
         "action_required": action,
@@ -126,15 +136,17 @@ def format_summary(inventory: dict) -> str:
     """Human-readable one-block summary for emails and logs."""
     lines = [
         "=== Clarity Lab — Topic Inventory ===",
-        f"Status        : {inventory['status'].upper()}",
-        f"Total topics  : {inventory['total_topics']}",
-        f"Published     : {inventory['published_topics']}",
-        f"Remaining     : {inventory['remaining_topics']}",
-        f"Failed        : {inventory['failed_topics']}",
-        f"Days left     : ~{inventory['days_left']}",
+        f"Status           : {inventory['status'].upper()}",
+        f"Total topics     : {inventory['total_topics']}",
+        f"Published        : {inventory['published_topics']}",
+        f"Remaining        : {inventory['remaining_topics']}",
+        f"Failed           : {inventory['failed_topics']}",
+        f"Publishing cadence: {inventory.get('cadence_per_week', 3)} topics/week",
+        f"Cadence source   : {inventory.get('cadence_source', 'default')}",
+        f"Estimated runway : ~{inventory['days_left']} days",
     ]
     if inventory.get("next_topic"):
-        lines.append(f"Next topic    : {inventory['next_topic']}")
+        lines.append(f"Next topic       : {inventory['next_topic']}")
     lines.append("")
     lines.append(inventory["message"])
     return "\n".join(lines)

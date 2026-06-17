@@ -126,9 +126,12 @@ def build_report() -> dict:
         "topic_inventory": inventory,
         "pipeline_health": {
             "overall_status": health["overall_status"],
+            "critical_reasons": health.get("critical_reasons", []),
+            "action_items": health.get("action_items", []),
             "channels": health["channels"],
             "token_issues": health["token_issues"],
             "missing_env": health["missing_env"],
+            "permissions_audit": health.get("permissions_audit", []),
         },
         "today_activity": {
             "total_topics_active": len(topics),
@@ -150,10 +153,18 @@ def _status_icon(status: str) -> str:
 
 
 def to_markdown(report: dict) -> str:
-    d = report["report_date"]
-    health_status = report["pipeline_health"]["overall_status"].upper()
-    inv = report["topic_inventory"]
-    activity = report["today_activity"]
+    d             = report["report_date"]
+    health        = report["pipeline_health"]
+    health_status = health["overall_status"].upper()
+    inv           = report["topic_inventory"]
+    activity      = report["today_activity"]
+    critical_reasons = health.get("critical_reasons", [])
+    action_items     = health.get("action_items", [])
+    permissions      = health.get("permissions_audit", [])
+    failed_topics    = [t for t in report["topics"] if t.get("pipeline_state") in
+                        ("failed", "partial_failure") or
+                        any(t.get(f) in ("failed", "error")
+                            for f in ("wix_status", "instagram_status", "facebook_status", "threads_status"))]
 
     lines = [
         f"# Clarity Lab — Daily Report {d}",
@@ -161,9 +172,33 @@ def to_markdown(report: dict) -> str:
         f"**Pipeline status:** {health_status}  ",
         f"**Topic inventory:** {inv['remaining_topics']} remaining — {inv['status'].upper()}",
         "",
+    ]
+
+    # --- Critical Reasons (only shown when status warrants it) ---
+    if critical_reasons and health["overall_status"] in ("critical", "blocked"):
+        lines += ["## Critical Reasons", ""]
+        for i, reason in enumerate(critical_reasons, 1):
+            lines.append(f"{i}. {reason}")
+        lines.append("")
+
+    # --- Action Required (always present) ---
+    lines += ["## Action Required", ""]
+    if action_items or failed_topics:
+        for item in action_items:
+            lines.append(f"- [ ] {item}")
+        for t in failed_topics[:5]:
+            lines.append(f"- [ ] Review failed topic: **{t['title']}** — {(t.get('errors') or 'no error detail')[:80]}")
+        if not action_items and not failed_topics:
+            lines.append("No manual action required today.")
+    else:
+        lines.append("No manual action required today.")
+    lines.append("")
+
+    # --- Publishing Activity ---
+    lines += [
         "## Publishing Activity",
         "",
-        f"- Topics with activity today: {activity['total_topics_active']}",
+        f"- Topics with activity: {activity['total_topics_active']}",
         f"- Failed: {activity['failed_topics']}",
         f"- In retry queue: {activity['retry_queue']}",
         "",
@@ -181,11 +216,10 @@ def to_markdown(report: dict) -> str:
                 lines.append(f"  - {url}")
         lines.append("")
 
-    # Topic table
+    # --- Topic table ---
     topics = report["topics"]
     if topics:
-        lines.append("## Topic Status")
-        lines.append("")
+        lines += ["## Topic Status", ""]
         lines.append("| ID | Title | Wix | IG | FB | Threads | Errors |")
         lines.append("|---|---|---|---|---|---|---|")
         for t in topics:
@@ -200,24 +234,45 @@ def to_markdown(report: dict) -> str:
             )
         lines.append("")
 
-    # Health issues
-    token_issues = report["pipeline_health"]["token_issues"]
-    missing_env  = report["pipeline_health"]["missing_env"]
-    if token_issues or missing_env:
-        lines.append("## Action Required")
+    # --- Permissions & Data Availability ---
+    lines += ["## Permissions & Data Availability", ""]
+    if permissions:
+        lines.append("| Channel | Publishing | Metrics | Comments | Notes |")
+        lines.append("|---|---|---|---|---|")
+        for p in permissions:
+            metrics_note = p["metrics_note"][:60] if len(p["metrics_note"]) > 60 else p["metrics_note"]
+            lines.append(
+                f"| {p['channel']} | {p['publishing']} | {p['metrics']} | {p['comments']} | {metrics_note} |"
+            )
         lines.append("")
-        for t in token_issues:
-            lines.append(f"- **{t['platform'].capitalize()} token**: {t['message']}  ")
-            lines.append(f"  Action: {t['action']}")
-        for m in missing_env:
-            lines.append(f"- **Missing env ({m['service']})**: {', '.join(m['missing_vars'])}  ")
-            lines.append(f"  Action: {m['action']}")
-        lines.append("")
-
-    # Inventory status
-    lines.append("## Topic Inventory")
+        lines.append("_Full permission details: see [docs/PERMISSIONS_AND_METRICS.md](../docs/PERMISSIONS_AND_METRICS.md)_")
+    else:
+        lines.append("_Permissions audit not available._")
     lines.append("")
-    lines.append(f"```\n{inventory_summary(inv)}\n```")
+
+    # --- Topic Inventory ---
+    lines += ["## Topic Inventory", ""]
+    lines.append(f"- Remaining: {inv['remaining_topics']} topics")
+    lines.append(f"- Publishing cadence: {inv.get('cadence_per_week', 3)} topics/week ({inv.get('cadence_source', 'default')})")
+    lines.append(f"- Estimated runway: ~{inv['days_left']} days")
+    if inv.get("next_topic"):
+        lines.append(f"- Next topic: {inv['next_topic']}")
+    lines.append(f"- Status: **{inv['status'].upper()}** — {inv['message']}")
+    lines.append("")
+
+    # --- Recommended Next Actions ---
+    lines += ["## Recommended Next Actions for Today", ""]
+    next_actions = list(action_items)  # start from health action items
+    if failed_topics:
+        next_actions.insert(0, f"Review {len(failed_topics)} failed topic(s) and retry if appropriate")
+    if not next_actions:
+        if inv["status"] in ("warning", "critical"):
+            next_actions.append("Begin planning next strategy cycle — topic inventory is low")
+        else:
+            next_actions.append("No action required — pipeline is operating normally")
+    for i, a in enumerate(next_actions[:6], 1):
+        lines.append(f"{i}. {a}")
+    lines.append("")
 
     return "\n".join(lines)
 
