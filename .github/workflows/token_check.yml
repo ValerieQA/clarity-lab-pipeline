@@ -78,6 +78,47 @@ jobs:
     permissions:
       issues: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+
+      # Email alert — added as additional channel; does not replace GitHub Issues
+      - name: Send email alert
+        env:
+          GMAIL_SENDER:       ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_EMAIL_TO:    ${{ secrets.REPORT_EMAIL_TO }}
+        run: |
+          python3 << 'EOF'
+          import os
+          from notifications.email_reporter import send_token_alert
+
+          failed = []
+          if '${{ needs.threads.result }}' == 'failure':
+              failed.append('Threads (THREADS_ACCESS_TOKEN)')
+          if '${{ needs.instagram.result }}' == 'failure':
+              failed.append('Instagram (IG_TOKEN)')
+          if '${{ needs.facebook.result }}' == 'failure':
+              failed.append('Facebook (FB_PAGE_TOKEN)')
+
+          run_url = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          body = (
+              'Meta token health check failed.\n\n'
+              'Affected platforms:\n' + '\n'.join(f'- {p}' for p in failed) + '\n\n'
+              'Required action:\n'
+              '1. Re-authenticate manually via the Meta developer portal.\n'
+              '2. Generate a new long-lived token for each affected platform.\n'
+              '3. Update the corresponding GitHub Secret.\n'
+              '4. Re-run the token health check workflow.\n\n'
+              f'Workflow run: {run_url}'
+          )
+          send_token_alert(body)
+          EOF
+        continue-on-error: true   # email failure must not prevent GitHub Issue creation
+
+      # GitHub Issue creation — kept as fallback (existing behavior preserved)
       - name: Create alert issue
         uses: actions/github-script@v7
         with:

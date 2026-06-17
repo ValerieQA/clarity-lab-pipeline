@@ -1,0 +1,74 @@
+name: Clarity Lab — Daily Report
+
+on:
+  schedule:
+    - cron: '0 10 * * *'   # Daily 10:00 UTC (after pipeline runs at 9:00)
+  workflow_dispatch:
+    inputs:
+      send_email:
+        description: 'Send email report'
+        required: false
+        default: 'true'
+
+jobs:
+  daily-report:
+    name: Generate and email daily report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline health check
+        env:
+          WIX_SITE_ID:          ${{ secrets.WIX_SITE_ID }}
+          WIX_API_KEY:          ${{ secrets.WIX_API_KEY }}
+          IG_USER_ID:           ${{ secrets.IG_USER_ID }}
+          IG_TOKEN:             ${{ secrets.IG_TOKEN }}
+          FB_PAGE_ID:           ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN:        ${{ secrets.FB_PAGE_TOKEN }}
+          THREADS_USER_ID:      ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          OPENAI_API_KEY:       ${{ secrets.OPENAI_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY:   ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          GMAIL_SENDER:         ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD:   ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_EMAIL_TO:      ${{ secrets.REPORT_EMAIL_TO }}
+          SEND_EMAIL_ALERTS:    'false'
+        run: python3 -m strategy.pipeline_health
+        continue-on-error: true
+
+      - name: Generate and email daily report
+        env:
+          WIX_SITE_ID:          ${{ secrets.WIX_SITE_ID }}
+          WIX_API_KEY:          ${{ secrets.WIX_API_KEY }}
+          IG_USER_ID:           ${{ secrets.IG_USER_ID }}
+          IG_TOKEN:             ${{ secrets.IG_TOKEN }}
+          FB_PAGE_ID:           ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN:        ${{ secrets.FB_PAGE_TOKEN }}
+          THREADS_USER_ID:      ${{ secrets.THREADS_USER_ID }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          OPENAI_API_KEY:       ${{ secrets.OPENAI_API_KEY }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY:   ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          GMAIL_SENDER:         ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD:   ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_EMAIL_TO:      ${{ secrets.REPORT_EMAIL_TO }}
+          SEND_EMAIL_ALERTS:    ${{ github.event.inputs.send_email || 'true' }}
+        run: python3 -m reports.daily_report
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-report-${{ github.run_id }}
+          path: data/reports/daily/
+          retention-days: 30

@@ -1,0 +1,179 @@
+name: Clarity Lab — Approve Strategy
+
+on:
+  workflow_dispatch:
+    inputs:
+      strategy_file:
+        description: 'Proposed strategy file (e.g. data/strategy/proposed_strategy_2026-06-16.md)'
+        required: true
+      topics_file:
+        description: 'Proposed topics file (e.g. data/strategy/proposed_topics_2026-06-16.csv)'
+        required: true
+      approve:
+        description: 'Approve and activate this strategy? (true/false)'
+        required: true
+        default: 'false'
+
+jobs:
+  approve:
+    name: Approve and activate strategy
+    runs-on: ubuntu-latest
+    if: github.event.inputs.approve == 'true'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN_WRITER }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate proposed files exist
+        run: |
+          if [ ! -f "${{ github.event.inputs.topics_file }}" ]; then
+            echo "ERROR: Topics file not found: ${{ github.event.inputs.topics_file }}"
+            exit 1
+          fi
+          if [ ! -f "${{ github.event.inputs.strategy_file }}" ]; then
+            echo "ERROR: Strategy file not found: ${{ github.event.inputs.strategy_file }}"
+            exit 1
+          fi
+          echo "Both files found."
+
+      - name: Archive current topics.csv
+        run: |
+          TIMESTAMP=$(date +%Y-%m-%d-%H%M)
+          mkdir -p data/strategy/archive
+          cp topics.csv "data/strategy/archive/topics_archived_${TIMESTAMP}.csv"
+          echo "Archived current topics.csv as topics_archived_${TIMESTAMP}.csv"
+
+      - name: Activate new topics
+        run: |
+          # Convert proposed_topics CSV to topics.csv format
+          python3 << 'EOF'
+          import csv
+          from pathlib import Path
+
+          proposed_path = Path("${{ github.event.inputs.topics_file }}")
+          topics_path   = Path("topics.csv")
+
+          # Read existing topics.csv headers
+          with topics_path.open(newline="") as f:
+              reader = csv.DictReader(f)
+              existing_fields = reader.fieldnames or []
+
+          # Read proposed topics
+          with proposed_path.open(newline="") as f:
+              reader = csv.DictReader(f)
+              proposed = list(reader)
+
+          # Map proposed fields to topics.csv format
+          from datetime import date
+          new_rows = []
+          for i, row in enumerate(proposed):
+              new_row = {f: "" for f in existing_fields}
+              new_row["ID"]                      = str(i + 1)
+              new_row["Date Added"]              = date.today().isoformat()
+              new_row["Topic / Working Title"]   = row.get("title", "")
+              new_row["Core Observation"]        = row.get("angle", "")
+              new_row["Content Pillar"]          = row.get("content_pillar", "")
+              new_row["Audience Question"]       = row.get("audience_pain", "")
+              new_row["Status"]                  = "Ready"
+              new_row["Priority"]                = "High"
+              new_row["Source"]                  = row.get("strategy_cycle_id", "")
+              new_rows.append(new_row)
+
+          with topics_path.open("w", newline="") as f:
+              writer = csv.DictWriter(f, fieldnames=existing_fields)
+              writer.writeheader()
+              writer.writerows(new_rows)
+
+          print(f"Activated {len(new_rows)} topics into topics.csv")
+          EOF
+
+      - name: Update strategy state file
+        run: |
+          python3 << 'EOF'
+          import json
+          from datetime import date, datetime, timezone
+          from pathlib import Path
+
+          state_path = Path("data/strategy/current_strategy_state.json")
+          state_path.parent.mkdir(parents=True, exist_ok=True)
+
+          # Extract cycle ID from topics file name
+          topics_file = "${{ github.event.inputs.topics_file }}"
+          strategy_file = "${{ github.event.inputs.strategy_file }}"
+          today = date.today().isoformat()
+
+          # Try to read cycle ID from proposed topics
+          import csv
+          cycle_id = f"CL-{today}-approved"
+          with open(topics_file, newline="") as f:
+              reader = csv.DictReader(f)
+              for row in reader:
+                  if row.get("strategy_cycle_id"):
+                      cycle_id = row["strategy_cycle_id"]
+                  break
+
+          state = {
+              "active_strategy_cycle_id": cycle_id,
+              "started_at": today,
+              "approved_at": datetime.now(tz=timezone.utc).isoformat(),
+              "approved_by_workflow": True,
+              "source_strategy_file": strategy_file,
+              "source_topics_file": topics_file,
+              "topics_file": "topics.csv",
+              "status": "active",
+          }
+
+          state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+          print(f"Strategy state updated: cycle_id={cycle_id}")
+          EOF
+
+      - name: Commit changes
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add topics.csv data/strategy/current_strategy_state.json data/strategy/archive/
+          git commit -m "Activate strategy cycle: approved via approve_strategy.yml
+
+          Strategy file: ${{ github.event.inputs.strategy_file }}
+          Topics file: ${{ github.event.inputs.topics_file }}
+          Approved: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          git push
+
+      - name: Send confirmation email
+        env:
+          GMAIL_SENDER:       ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_EMAIL_TO:    ${{ secrets.REPORT_EMAIL_TO }}
+        run: |
+          python3 << 'EOF'
+          from notifications.email_reporter import send_cycle_complete
+          send_cycle_complete(
+              f"New strategy cycle activated successfully.\n\n"
+              f"Strategy file: ${{ github.event.inputs.strategy_file }}\n"
+              f"Topics file: ${{ github.event.inputs.topics_file }}\n\n"
+              f"The previous topics.csv has been archived to data/strategy/archive/.\n"
+              f"The new topics.csv is now active and the publishing pipeline will use it.\n\n"
+              f"Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          )
+          EOF
+
+  reject:
+    name: Log rejection
+    runs-on: ubuntu-latest
+    if: github.event.inputs.approve != 'true'
+    steps:
+      - name: Log rejection
+        run: |
+          echo "Strategy NOT approved (approve=${{ github.event.inputs.approve }})."
+          echo "No changes were made. topics.csv remains unchanged."
+          echo "To approve, re-run this workflow with approve=true."
