@@ -36,7 +36,8 @@ class TestBuildReport:
         with mock.patch.object(wr, "TOPICS_FILE", path):
             report = wr.build_report()
         for key in ["report_type", "report_date", "week_start", "channel_performance",
-                    "topic_inventory", "facts", "interpretation", "operational_issues"]:
+                    "topic_inventory", "facts", "interpretation", "operational_issues",
+                    "data_quality", "what_changed"]:
             assert key in report, f"Missing key: {key}"
 
     def test_report_type_is_weekly(self, tmp_path):
@@ -50,6 +51,24 @@ class TestBuildReport:
         with mock.patch.object(wr, "TOPICS_FILE", path):
             report = wr.build_report()
         assert report["week_start"] == (date.today() - timedelta(days=7)).isoformat()
+
+    def test_data_quality_has_required_keys(self, tmp_path):
+        path = _make_topics([])
+        with mock.patch.object(wr, "TOPICS_FILE", path):
+            report = wr.build_report()
+        dqa = report["data_quality"]
+        assert "score" in dqa
+        assert "available" in dqa
+        assert "missing" in dqa
+        assert "confidence" in dqa
+        assert dqa["confidence"] in ("Low", "Medium", "High")
+
+    def test_what_changed_present(self, tmp_path):
+        path = _make_topics([])
+        with mock.patch.object(wr, "TOPICS_FILE", path):
+            report = wr.build_report()
+        assert isinstance(report["what_changed"], list)
+        assert len(report["what_changed"]) > 0
 
     def test_published_topics_appear_in_facts(self, tmp_path):
         path = _make_topics([{
@@ -90,7 +109,6 @@ class TestBuildReport:
 
 class TestThreadsContradiction:
     def test_zero_posts_this_week_shows_no_current_best(self, tmp_path):
-        """If 0 Threads posts this week, best_performing_this_week must be empty."""
         path = _make_topics([])
         with mock.patch.object(wr, "TOPICS_FILE", path), \
              mock.patch.object(wr, "THREADS_POSTS", tmp_path / "none.csv"):
@@ -98,7 +116,6 @@ class TestThreadsContradiction:
         assert report["threads_insights"]["best_performing_this_week"] == []
 
     def test_all_zero_scores_flagged(self, tmp_path):
-        """If all Threads post scores are 0, all_scores_zero must be True."""
         path = _make_topics([])
         mock_threads_data = {
             "best_performing_posts": [
@@ -113,16 +130,28 @@ class TestThreadsContradiction:
         assert report["threads_insights"]["all_scores_zero"] is True
 
 
-class TestToMarkdownV2:
+class TestToMarkdownV3:
     def _get_report(self, path):
         with mock.patch.object(wr, "TOPICS_FILE", path):
             return wr.build_report()
+
+    def test_dashboard_section_present(self, tmp_path):
+        path = _make_topics([])
+        report = self._get_report(path)
+        md = wr.to_markdown(report)
+        assert "## Dashboard" in md
+
+    def test_what_changed_section_present(self, tmp_path):
+        path = _make_topics([])
+        report = self._get_report(path)
+        md = wr.to_markdown(report)
+        assert "What Changed Since Last Report" in md
 
     def test_action_required_section_always_present(self, tmp_path):
         path = _make_topics([])
         report = self._get_report(path)
         md = wr.to_markdown(report)
-        assert "## Action Required" in md
+        assert "Action Required" in md
 
     def test_facts_section_present(self, tmp_path):
         path = _make_topics([])
@@ -143,30 +172,28 @@ class TestToMarkdownV2:
         assert "Confidence" in md
         assert any(level in md for level in ("Low", "Medium", "High"))
 
-    def test_permissions_table_present(self, tmp_path):
+    def test_data_quality_section_present(self, tmp_path):
         path = _make_topics([])
         report = self._get_report(path)
         md = wr.to_markdown(report)
-        assert "## Permissions & Data Availability" in md
+        assert "Data Quality" in md
+        assert "/100" in md
 
     def test_recommended_next_actions_present(self, tmp_path):
         path = _make_topics([])
         report = self._get_report(path)
         md = wr.to_markdown(report)
-        assert "## Recommended Next Actions" in md
+        assert "Recommended Next Actions" in md
 
     def test_no_current_best_posts_when_zero_threads_this_week(self, tmp_path):
-        """Markdown must not show current-week best posts when threads_posts_this_week == 0."""
         path = _make_topics([])
         with mock.patch.object(wr, "TOPICS_FILE", path), \
              mock.patch.object(wr, "THREADS_POSTS", tmp_path / "empty.csv"):
             report = wr.build_report()
         md = wr.to_markdown(report)
-        # Should NOT say "Best performing posts this week"
         assert "Best performing posts this week:" not in md
 
     def test_all_zero_scores_labeled_no_signal(self, tmp_path):
-        """If all scores are 0, markdown must say no meaningful performance signal."""
         path = _make_topics([])
         mock_threads_data = {
             "best_performing_posts": [{"post_id": "a", "score": 0, "text_preview": "test"}]
@@ -183,9 +210,9 @@ class TestToMarkdownV2:
         with mock.patch.object(wr, "TOPICS_FILE", path):
             report = wr.build_report()
         report["pipeline_health_summary"]["overall_status"] = "critical"
-        report["pipeline_health_summary"]["critical_reasons"] = ["Token expired.", "No publish in 10 days."]
+        report["pipeline_health_summary"]["critical_reasons"] = ["Token expired.", "No publish."]
         md = wr.to_markdown(report)
-        assert "## Critical Reasons" in md
+        assert "Critical Reasons" in md
         assert "Token expired." in md
 
     def test_critical_section_absent_when_healthy(self, tmp_path):
@@ -195,7 +222,7 @@ class TestToMarkdownV2:
         report["pipeline_health_summary"]["overall_status"] = "healthy"
         report["pipeline_health_summary"]["critical_reasons"] = []
         md = wr.to_markdown(report)
-        assert "## Critical Reasons" not in md
+        assert "Critical Reasons" not in md
 
     def test_days_left_explanation_in_markdown(self, tmp_path):
         path = _make_topics([])
@@ -209,6 +236,13 @@ class TestToMarkdownV2:
         md = wr.to_markdown(report)
         for ch in ["Wix", "Instagram", "Facebook", "Threads"]:
             assert ch in md
+
+    def test_visual_indicators_present(self, tmp_path):
+        path = _make_topics([])
+        report = self._get_report(path)
+        md = wr.to_markdown(report)
+        has_indicator = any(icon in md for icon in ("🟢", "🟡", "🔴", "✅", "⚪"))
+        assert has_indicator
 
 
 class TestSaveReport:

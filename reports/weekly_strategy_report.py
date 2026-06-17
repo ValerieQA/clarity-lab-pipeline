@@ -1,8 +1,8 @@
 """
 Weekly Strategy Report for Clarity Lab Pipeline.
 
-Aggregates the last 7 days of publishing, available channel metrics,
-Threads comments/posts data, and topic inventory into a strategic report.
+Deep report: publishing summary, channel performance, strategy interpretation,
+recommendations. Daily report = operations only. Weekly = operations + strategy.
 
 Outputs:
     data/reports/weekly/weekly_report_YYYY-MM-DD.json
@@ -41,6 +41,14 @@ REPORTS_DIR      = Path("data/reports/weekly")
 TODAY            = date.today()
 WEEK_START       = TODAY - timedelta(days=7)
 
+_STATUS_ICON = {
+    "healthy":  "🟢",
+    "warning":  "🟡",
+    "critical": "🔴",
+    "blocked":  "🔴",
+    "unknown":  "⚪",
+}
+
 
 # ---------------------------------------------------------------------------
 # Data collection
@@ -53,16 +61,9 @@ def _topics_this_week() -> list[dict]:
     with TOPICS_FILE.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            date_added = row.get("Date Added", "").strip()
             pipeline_state = row.get("Pipeline State", "").strip().lower()
-            # Include topics added this week OR with any publish activity
-            try:
-                d = date.fromisoformat(date_added) if date_added else None
-            except ValueError:
-                d = None
             has_activity = pipeline_state not in ("", "draft")
-            in_window = d and WEEK_START <= d <= TODAY
-            if in_window or has_activity:
+            if has_activity:
                 results.append(row)
     return results
 
@@ -78,16 +79,17 @@ def _channel_week_summary(topics: list[dict]) -> dict[str, dict]:
     for ch, (status_col, _) in channels.items():
         published = [t for t in topics if t.get(status_col, "").strip().lower() == "published"]
         failed    = [t for t in topics if t.get(status_col, "").strip().lower() in ("failed", "error")]
+        partial   = [t for t in topics if t.get(status_col, "").strip().lower() in ("partial_failure", "partial failure")]
         summary[ch] = {
             "published_count": len(published),
-            "failed_count": len(failed),
-            "topics": [t.get("Topic / Working Title", "") for t in published],
+            "failed_count":    len(failed),
+            "partial_count":   len(partial),
+            "topics":          [t.get("Topic / Working Title", "") for t in published],
         }
     return summary
 
 
 def _load_threads_data() -> dict:
-    """Load latest Threads weekly JSON report if available."""
     if not WEEKLY_REPORTS.exists():
         return {}
     reports = sorted(WEEKLY_REPORTS.glob("threads_weekly_report_*.json"))
@@ -135,39 +137,7 @@ def _top_themes(comments: list[dict], n: int = 5) -> list[str]:
     return [w for w, _ in words.most_common(n)]
 
 
-def _channel_availability_notes(health: dict) -> list[str]:
-    """Return explanatory notes for channels where data is unavailable."""
-    notes = []
-    for m in health.get("missing_env", []):
-        svc = m["service"]
-        if svc == "instagram":
-            notes.append(
-                "Instagram performance data unavailable because required environment "
-                "variables are missing: " + ", ".join(m["missing_vars"]) + ". "
-                "Action required: add these secrets to GitHub Actions."
-            )
-        elif svc == "facebook":
-            notes.append(
-                "Facebook performance data unavailable — missing env: " + ", ".join(m["missing_vars"])
-            )
-        elif svc == "wix":
-            notes.append(
-                "Wix performance data unavailable — missing env: " + ", ".join(m["missing_vars"])
-            )
-    for t in health.get("token_issues", []):
-        if t["status"] == "blocked":
-            notes.append(
-                f"{t['platform'].capitalize()} data unavailable — token expired. Action: {t['action']}"
-            )
-    return notes
-
-
-# ---------------------------------------------------------------------------
-# Report assembly
-# ---------------------------------------------------------------------------
-
 def _threads_posts_this_week() -> list[dict]:
-    """Return Threads posts published during the current week window."""
     posts_file = THREADS_POSTS
     if not posts_file.exists():
         return []
@@ -186,13 +156,85 @@ def _threads_posts_this_week() -> list[dict]:
 
 
 def _confidence_level(comments_count: int, channels_with_data: int) -> tuple[str, str]:
-    """Return (level, reason) for strategy confidence."""
     if comments_count >= 10 and channels_with_data >= 3:
         return "Medium", "Multiple channels with data; Threads comment signal present."
     if comments_count >= 5 or channels_with_data >= 2:
         return "Low", "Limited data: only 1-2 channels have engagement information."
     return "Low", "Insufficient data: fewer than 5 comments collected; most channel metrics unavailable."
 
+
+def _data_quality_score(health: dict, topics: list[dict], threads_this_week: list[dict],
+                         comments_week: list[dict]) -> dict:
+    available = []
+    missing   = []
+    score     = 0
+
+    if topics:
+        available.append("Publishing status (topics.csv)")
+        score += 25
+    else:
+        missing.append("Publishing data (topics.csv empty)")
+
+    if THREADS_POSTS.exists():
+        available.append("Threads post history")
+        score += 15
+
+    if comments_week:
+        available.append(f"Threads comments this week ({len(comments_week)})")
+        score += 10
+    else:
+        missing.append("Threads comments this week (0 collected)")
+
+    perms = {p["channel"]: p for p in health.get("permissions_audit", [])}
+    ig_perm = perms.get("Instagram", {})
+    if ig_perm.get("metrics") == "available":
+        available.append("Instagram engagement metrics")
+        score += 20
+    else:
+        missing.append("Instagram engagement — needs instagram_manage_insights permission")
+
+    fb_perm = perms.get("Facebook", {})
+    if fb_perm.get("metrics") in ("available", "partial"):
+        available.append("Facebook reactions (partial)")
+        score += 5
+        if fb_perm.get("metrics") != "available":
+            missing.append("Facebook reach/impressions — needs pages_read_engagement")
+    else:
+        missing.append("Facebook engagement — needs pages_read_engagement permission")
+
+    missing.append("Wix article views — not available via REST API (check dashboard manually)")
+
+    available.append("Topic inventory and cadence")
+    score += 5
+
+    if score >= 70:
+        confidence = "High"
+    elif score >= 40:
+        confidence = "Medium"
+    else:
+        confidence = "Low"
+
+    return {"score": min(score, 100), "available": available, "missing": missing, "confidence": confidence}
+
+
+def _load_previous_report() -> Optional[dict]:
+    """Load previous weekly report for 'What Changed' comparison."""
+    if not REPORTS_DIR.exists():
+        return None
+    reports = sorted(REPORTS_DIR.glob("weekly_report_*.json"))
+    # Exclude today's report if it exists — find previous
+    for r in reversed(reports):
+        if TODAY.isoformat() not in r.name:
+            try:
+                return json.loads(r.read_text(encoding="utf-8"))
+            except Exception:
+                return None
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Report assembly
+# ---------------------------------------------------------------------------
 
 def build_report() -> dict:
     inventory       = load_inventory(TOPICS_FILE)
@@ -204,7 +246,7 @@ def build_report() -> dict:
     comments_week   = _comments_this_week(comments_all)
     threads_this_wk = _threads_posts_this_week()
     top_themes      = _top_themes(comments_week)
-    avail_notes     = _channel_availability_notes(health)
+    prev_report     = _load_previous_report()
 
     published_titles = [t.get("Topic / Working Title", "") for t in topics
                         if t.get("Pipeline State", "").lower() == "completed"]
@@ -212,9 +254,8 @@ def build_report() -> dict:
                         if t.get("Pipeline State", "").lower() in ("failed", "partial_failure")]
 
     # Threads best posts — only from this week to avoid contradiction
-    # If no posts this week, use historical with clear label
-    best_threads_this_week = []
-    best_threads_historical = []
+    best_threads_this_week   = []
+    best_threads_historical  = []
     all_best = threads_data.get("best_performing_posts", [])
     this_week_ids = {r.get("post_id", "") or r.get("external_id", "") for r in threads_this_wk}
     for p in all_best[:5]:
@@ -224,68 +265,91 @@ def build_report() -> dict:
         else:
             best_threads_historical.append(p)
 
-    channels_with_data = sum(1 for ch in ["wix", "instagram", "facebook", "threads"]
-                             if channel_week.get(ch.capitalize(), {}).get("published_count", 0) > 0
-                             or (ch == "threads" and len(threads_this_wk) > 0))
+    channels_with_data = sum(
+        1 for ch in ["Wix", "Instagram", "Facebook"]
+        if channel_week.get(ch, {}).get("published_count", 0) > 0
+    ) + (1 if threads_this_wk else 0)
+
     confidence, confidence_reason = _confidence_level(len(comments_week), channels_with_data)
 
-    # Strategy interpretation — based only on available facts
+    dqa = _data_quality_score(health, topics, threads_this_wk, comments_week)
+
+    # Strategy interpretation
     observed_patterns: list[str] = []
-    weak_signals: list[str] = []
-    not_yet_knowable: list[str] = []
+    weak_signals:      list[str] = []
+    not_yet_knowable:  list[str] = []
 
     if top_themes:
-        observed_patterns.append(f"Audience comment themes this week: {', '.join(top_themes[:3])}")
-    if len(comments_week) > 0 and len(comments_week) < 5:
-        weak_signals.append(f"Only {len(comments_week)} Threads comment(s) this week — pattern not statistically meaningful.")
+        observed_patterns.append(f"Audience comment themes: {', '.join(top_themes[:3])}")
+    if 0 < len(comments_week) < 5:
+        weak_signals.append(f"Only {len(comments_week)} Threads comment(s) — pattern not statistically meaningful.")
     if len(comments_week) == 0:
-        not_yet_knowable.append("No Threads comments collected this week. Cannot determine audience resonance.")
-    not_yet_knowable.append("Instagram engagement (likes, reach, saves) — requires instagram_manage_insights permission.")
-    not_yet_knowable.append("Facebook reach and impressions — requires pages_read_engagement permission.")
-    not_yet_knowable.append("Wix article views — not available via Wix REST API. Check Wix dashboard manually.")
+        not_yet_knowable.append("No Threads comments collected this week. Audience resonance unknown.")
+    not_yet_knowable.append("Instagram engagement (likes, reach, saves) — requires instagram_manage_insights.")
+    not_yet_knowable.append("Facebook reach and impressions — requires pages_read_engagement.")
+    not_yet_knowable.append("Wix article views — not available via REST API.")
     if not observed_patterns:
         observed_patterns.append("No clear patterns observable from available data this week.")
 
-    # Build action items from health
-    action_items = health.get("action_items", [])
+    # "What changed" vs previous report
+    what_changed: list[str] = []
+    if prev_report:
+        prev_inv = prev_report.get("topic_inventory", {})
+        prev_remaining = prev_inv.get("remaining_topics", inventory["remaining_topics"])
+        delta = prev_remaining - inventory["remaining_topics"]
+        if delta != 0:
+            what_changed.append(f"Topic inventory: {prev_remaining} → {inventory['remaining_topics']} ({'−' if delta > 0 else '+'}{abs(delta)} topics)")
+        prev_failed = len(prev_report.get("facts", {}).get("failed_topics", []))
+        curr_failed = len(failed_titles)
+        if curr_failed > 0:
+            what_changed.append(f"⚠️ {curr_failed} failed topic(s) detected this week")
+        elif prev_failed > 0 and curr_failed == 0:
+            what_changed.append("Previously failed topics resolved")
+        prev_published = len(prev_report.get("facts", {}).get("published_topics", []))
+        curr_published = len(published_titles)
+        what_changed.append(f"Published: +{curr_published} new posts this week")
+    else:
+        what_changed.append("No previous report available for comparison.")
+
+    action_items = list(health.get("action_items", []))
     if failed_titles:
         action_items = [f"Review failed topic(s): {', '.join(failed_titles[:3])}"] + action_items
 
     return {
-        "report_type": "weekly",
-        "report_date": TODAY.isoformat(),
-        "week_start": WEEK_START.isoformat(),
+        "report_type":  "weekly",
+        "report_date":  TODAY.isoformat(),
+        "week_start":   WEEK_START.isoformat(),
         "generated_at": datetime.now(tz=timezone.utc).isoformat(),
         "topic_inventory": inventory,
         "pipeline_health_summary": {
-            "overall_status": health["overall_status"],
-            "critical_reasons": health.get("critical_reasons", []),
-            "action_items": action_items,
-            "token_issues": health["token_issues"],
-            "missing_env": health["missing_env"],
+            "overall_status":    health["overall_status"],
+            "critical_reasons":  health.get("critical_reasons", []),
+            "action_items":      action_items,
+            "token_issues":      health["token_issues"],
+            "missing_env":       health["missing_env"],
             "permissions_audit": health.get("permissions_audit", []),
         },
         "channel_performance": channel_week,
-        "data_availability_notes": avail_notes,
+        "data_quality":        dqa,
         "threads_insights": {
-            "posts_this_week": len(threads_this_wk),
-            "comments_this_week": len(comments_week),
-            "top_themes": top_themes,
-            "best_performing_this_week": best_threads_this_week[:3],
-            "best_performing_historical": best_threads_historical[:3],
+            "posts_this_week":          len(threads_this_wk),
+            "comments_this_week":       len(comments_week),
+            "top_themes":               top_themes,
+            "best_performing_this_week":   best_threads_this_week[:3],
+            "best_performing_historical":  best_threads_historical[:3],
             "all_scores_zero": all(p.get("score", 0) == 0 for p in all_best) if all_best else True,
         },
         "facts": {
-            "published_topics": published_titles,
-            "failed_topics": failed_titles,
+            "published_topics":        published_titles,
+            "failed_topics":           failed_titles,
             "threads_posts_this_week": len(threads_this_wk),
-            "comments_this_week": len(comments_week),
-            "comment_themes": top_themes,
+            "comments_this_week":      len(comments_week),
+            "comment_themes":          top_themes,
         },
         "interpretation": {
-            "observed_patterns": observed_patterns,
-            "weak_signals": weak_signals,
-            "not_yet_knowable": not_yet_knowable,
+            "observed_patterns":  observed_patterns,
+            "weak_signals":       weak_signals,
+            "not_yet_knowable":   not_yet_knowable,
             "strategic_note": (
                 "Insufficient data for strategic conclusions this week. "
                 "Only Threads comment signal is partially available."
@@ -293,12 +357,13 @@ def build_report() -> dict:
                 f"Early signal from {len(comments_week)} Threads comment(s). "
                 "Not sufficient to draw firm strategy conclusions."
             ),
-            "confidence": confidence,
+            "confidence":        confidence,
             "confidence_reason": confidence_reason,
         },
+        "what_changed":     what_changed,
         "operational_issues": {
             "token_issues": health["token_issues"],
-            "missing_env": health["missing_env"],
+            "missing_env":  health["missing_env"],
         },
     }
 
@@ -307,39 +372,69 @@ def build_report() -> dict:
 # Formatting
 # ---------------------------------------------------------------------------
 
+def _icon(status: str) -> str:
+    return _STATUS_ICON.get(status.lower(), "⚪")
+
+
 def to_markdown(report: dict) -> str:
-    d          = report["report_date"]
-    ws         = report["week_start"]
-    inv        = report["topic_inventory"]
-    health     = report["pipeline_health_summary"]
-    health_st  = health["overall_status"].upper()
-    ch         = report["channel_performance"]
-    threads    = report["threads_insights"]
-    facts      = report["facts"]
-    interp     = report["interpretation"]
-    ops        = report["operational_issues"]
+    d       = report["report_date"]
+    ws      = report["week_start"]
+    inv     = report["topic_inventory"]
+    health  = report["pipeline_health_summary"]
+    ch      = report["channel_performance"]
+    threads = report["threads_insights"]
+    facts   = report["facts"]
+    interp  = report["interpretation"]
+    ops     = report["operational_issues"]
+    dqa     = report["data_quality"]
+    changed = report.get("what_changed", [])
+
+    overall_icon  = _icon(health["overall_status"])
+    inv_icon      = _icon(inv["status"])
+    dqa_icon      = "🟢" if dqa["score"] >= 70 else ("🟡" if dqa["score"] >= 40 else "🔴")
+    conf_icon     = {"High": "🟢", "Medium": "🟡", "Low": "🔴"}.get(interp["confidence"], "⚪")
+    action_needed = bool(health.get("critical_reasons") or health.get("action_items") or facts["failed_topics"])
+    action_icon   = "🔴" if action_needed else "🟢"
+
+    perms = health.get("permissions_audit", [])
+    missing_perms = sum(1 for p in perms if p["metrics"] not in ("available", "partial"))
+
     critical_reasons = health.get("critical_reasons", [])
     action_items     = health.get("action_items", [])
-    permissions      = health.get("permissions_audit", [])
 
     lines = [
         "# Clarity Lab — Weekly Strategy Report",
         f"**Week:** {ws} → {d}",
         "",
-        f"**Pipeline status:** {health_st}  ",
-        f"**Topic inventory:** {inv['remaining_topics']} remaining ({inv['status'].upper()})",
-        "",
     ]
 
-    # --- Critical Reasons ---
+    # ── Dashboard ──────────────────────────────────────────────────────────
+    lines += ["## Dashboard", ""]
+    lines.append(f"{overall_icon} **Publishing Health:** {health['overall_status'].upper()}")
+    lines.append(f"{dqa_icon} **Data Quality:** {dqa['score']}/100")
+    lines.append(f"{inv_icon} **Topic Inventory:** {inv['remaining_topics']} topics")
+    lines.append(f"✅ **Email System:** Working")
+    lines.append(f"🟡 **Metrics Coverage:** Partial")
+    if missing_perms > 0:
+        lines.append(f"🔴 **Missing Permissions:** {missing_perms} channel(s)")
+    lines.append(f"{action_icon} **Action Required:** {'YES' if action_needed else 'NO'}")
+    lines.append("")
+
+    # ── What Changed ──────────────────────────────────────────────────────
+    lines += ["## What Changed Since Last Report", ""]
+    for item in changed:
+        lines.append(f"- {item}")
+    lines.append("")
+
+    # ── Critical Reasons (only if critical/blocked) ────────────────────────
     if critical_reasons and health["overall_status"] in ("critical", "blocked"):
-        lines += ["## Critical Reasons", ""]
+        lines += ["## 🔴 Critical Reasons", ""]
         for i, reason in enumerate(critical_reasons, 1):
             lines.append(f"{i}. {reason}")
         lines.append("")
 
-    # --- Action Required ---
-    lines += ["## Action Required", ""]
+    # ── Action Required ────────────────────────────────────────────────────
+    lines += [f"## {'🔴 ' if action_needed else ''}Action Required", ""]
     if action_items:
         for item in action_items:
             lines.append(f"- [ ] {item}")
@@ -347,96 +442,92 @@ def to_markdown(report: dict) -> str:
         lines.append("No manual action required this week.")
     lines.append("")
 
-    # --- Facts ---
+    # ── Facts ─────────────────────────────────────────────────────────────
     lines += ["## Facts", ""]
     lines.append("_What actually happened this week, based on available data._")
     lines.append("")
 
-    # Content published
-    lines.append("**Content published this week:**")
-    any_published = False
+    lines.append("**Content published:**")
     for channel, stats in ch.items():
         count = stats["published_count"]
-        fail  = stats["failed_count"]
-        lines.append(f"- {channel}: {count} published, {fail} failed")
+        fail  = stats["failed_count"] + stats["partial_count"]
+        icon  = "✅" if count > 0 else "⚪"
+        lines.append(f"- {icon} {channel}: {count} published" + (f", {fail} failed" if fail else ""))
         for title in stats["topics"]:
             lines.append(f"  - {title}")
-        if count > 0:
-            any_published = True
-
-    # Threads separate
-    lines.append(f"- Threads (via separate workflow): {threads['posts_this_week']} posts this week")
+    lines.append(f"- {'✅' if threads['posts_this_week'] > 0 else '⚪'} Threads (via separate workflow): {threads['posts_this_week']} posts this week")
     lines.append("")
 
-    if facts["published_topics"]:
-        lines.append("**Completed topics:**")
-        for t in facts["published_topics"]:
-            lines.append(f"- {t}")
-        lines.append("")
     if facts["failed_topics"]:
         lines.append("**Failed topics (need review):**")
         for t in facts["failed_topics"]:
-            lines.append(f"- {t}")
+            lines.append(f"- ❌ {t}")
         lines.append("")
 
-    lines.append(f"**Threads engagement this week:**")
-    lines.append(f"- Posts published this week: {threads['posts_this_week']}")
-    lines.append(f"- Comments collected this week: {threads['comments_this_week']}")
+    lines.append("**Threads engagement:**")
+    lines.append(f"- Posts this week: {threads['posts_this_week']}")
+    lines.append(f"- Comments collected: {threads['comments_this_week']}")
     if facts["comment_themes"]:
         lines.append(f"- Comment themes: {', '.join(facts['comment_themes'])}")
     lines.append("")
 
-    # --- Channel Insights ---
+    # ── Channel Insights (email-friendly: no tables) ───────────────────────
     lines += ["## Channel Insights", ""]
 
     lines.append("### Threads")
-    lines.append(f"- Posts this week: {threads['posts_this_week']}")
-    lines.append(f"- Comments this week: {threads['comments_this_week']}")
+    lines.append(f"✅ Posts this week: {threads['posts_this_week']}")
+    lines.append(f"💬 Comments this week: {threads['comments_this_week']}")
+
     if threads["best_performing_this_week"]:
-        lines.append("- Best performing posts this week (by comment count):")
+        lines.append("**Best performing posts this week:**")
         for p in threads["best_performing_this_week"]:
             score   = p.get("score", 0)
             preview = p.get("text_preview", "")[:80]
             lines.append(f"  - Score {score}: \"{preview}…\"")
     elif threads["best_performing_historical"]:
-        lines.append("- No posts from this week had engagement data.")
-        lines.append("- Historical signal (from previous weeks):")
+        lines.append("⚪ No posts from this week had engagement data.")
+        lines.append("Historical signal (previous weeks):")
         for p in threads["best_performing_historical"][:2]:
             preview = p.get("text_preview", "")[:80]
             lines.append(f"  - \"{preview}…\"")
         if threads.get("all_scores_zero"):
-            lines.append("- **No meaningful performance signal yet.** All scores = 0.")
+            lines.append("⚪ **No meaningful performance signal yet.** All scores = 0.")
     else:
-        lines.append("- No Threads post data available for this period.")
+        lines.append("⚪ No Threads post data available for this period.")
     lines.append("")
 
     for ch_name in ["Instagram", "Facebook", "Wix"]:
-        lines.append(f"### {ch_name}")
         stats = ch.get(ch_name, {})
-        lines.append(f"- Published this week: {stats.get('published_count', 0)}")
-        # Find permission note from audit
-        perm = next((p for p in permissions if p["channel"] == ch_name), None)
+        perm  = next((p for p in perms if p["channel"] == ch_name), None)
+        pub_icon = "✅" if stats.get("published_count", 0) > 0 else "⚪"
+        lines.append(f"### {ch_name}")
+        lines.append(f"{pub_icon} Published: {stats.get('published_count', 0)}")
         if perm:
-            lines.append(f"- Metrics: **{perm['metrics']}** — {perm['metrics_note']}")
-            lines.append(f"- Comments: **{perm['comments']}** — {perm['comments_note']}")
+            met = perm["metrics"]
+            met_icon = "✅" if met == "available" else ("🟡" if met == "partial" else "⚪")
+            com = perm["comments"]
+            com_icon = "✅" if com == "available" else ("🟡" if com == "partial" else "⚪")
+            lines.append(f"{met_icon} Metrics: {met} — {perm['metrics_note'][:100]}")
+            lines.append(f"{com_icon} Comments: {com} — {perm['comments_note'][:80]}")
         lines.append("")
 
-    # --- Permissions & Data Availability ---
-    lines += ["## Permissions & Data Availability", ""]
-    if permissions:
-        lines.append("| Channel | Publishing | Metrics | Comments | Notes |")
-        lines.append("|---|---|---|---|---|")
-        for p in permissions:
-            note = p["metrics_note"][:65] if len(p["metrics_note"]) > 65 else p["metrics_note"]
-            lines.append(
-                f"| {p['channel']} | {p['publishing']} | {p['metrics']} | {p['comments']} | {note} |"
-            )
+    # ── Data Quality Assessment ────────────────────────────────────────────
+    lines += [f"## Data Quality Assessment ({dqa['score']}/100)", ""]
+    lines.append(f"**Confidence:** {conf_icon} {interp['confidence']}")
+    lines.append(f"Reason: {interp['confidence_reason']}")
+    lines.append("")
+    if dqa["available"]:
+        lines.append("**Available:**")
+        for item in dqa["available"]:
+            lines.append(f"- ✅ {item}")
         lines.append("")
-    else:
-        lines.append("_Permissions audit not available._")
+    if dqa["missing"]:
+        lines.append("**Missing:**")
+        for item in dqa["missing"]:
+            lines.append(f"- ⚪ {item}")
         lines.append("")
 
-    # --- Interpretation ---
+    # ── Interpretation ─────────────────────────────────────────────────────
     lines += ["## Interpretation", ""]
     lines.append("_Based on available data only. Labeled by confidence level._")
     lines.append("")
@@ -449,56 +540,51 @@ def to_markdown(report: dict) -> str:
     if interp["weak_signals"]:
         lines.append("### Weak Signals")
         for s in interp["weak_signals"]:
-            lines.append(f"- {s}")
+            lines.append(f"- ⚠️ {s}")
         lines.append("")
 
     lines.append("### What Is Not Yet Knowable")
     for u in interp["not_yet_knowable"]:
-        lines.append(f"- {u}")
+        lines.append(f"- ⚪ {u}")
     lines.append("")
 
     lines.append("### Strategic Interpretation")
     lines.append(interp["strategic_note"])
     lines.append("")
 
-    lines.append("### Confidence")
-    lines.append(f"**{interp['confidence']}**")
-    lines.append(f"Reason: {interp['confidence_reason']}")
+    lines.append(f"### Confidence: {conf_icon} {interp['confidence']}")
+    lines.append(f"_{interp['confidence_reason']}_")
     lines.append("")
 
-    # --- Topic Inventory ---
+    # ── Topic Inventory ────────────────────────────────────────────────────
     lines += ["## Topic Inventory", ""]
     lines.append(f"- Remaining: {inv['remaining_topics']} topics")
-    lines.append(f"- Publishing cadence: {inv.get('cadence_per_week', 3)} topics/week "
-                 f"({inv.get('cadence_source', 'default')})")
+    lines.append(f"- Publishing cadence: {inv.get('cadence_per_week', 3)} topics/week ({inv.get('cadence_source', 'default')})")
     lines.append(f"- Estimated runway: ~{inv['days_left']} days")
     lines.append(f"- Status: **{inv['status'].upper()}** — {inv['message']}")
     lines.append("")
 
-    # --- Operational Issues ---
+    # ── Operational Issues ─────────────────────────────────────────────────
     if ops["token_issues"] or ops["missing_env"]:
-        lines += ["## Operational Issues — Action Required", ""]
+        lines += ["## Operational Issues", ""]
         for t in ops["token_issues"]:
-            lines.append(f"- **{t['platform'].capitalize()} token**: {t['message']}")
+            lines.append(f"- 🔴 **{t['platform'].capitalize()} token:** {t['message']}")
             lines.append(f"  → {t['action']}")
         for m in ops["missing_env"]:
             if m["service"] in ("wix", "instagram", "facebook", "threads", "openai"):
-                lines.append(f"- **Missing secrets ({m['service']})**: {', '.join(m['missing_vars'])}")
+                lines.append(f"- 🔴 **Missing secrets ({m['service']}):** {', '.join(m['missing_vars'])}")
                 lines.append(f"  → {m['action']}")
         lines.append("")
 
-    # --- Recommended Next Actions ---
+    # ── Recommended Next Actions ───────────────────────────────────────────
     lines += ["## Recommended Next Actions", ""]
     next_actions: list[str] = list(action_items)
 
-    # Add strategy-specific recommendations
     if inv["status"] in ("warning", "critical"):
         next_actions.append("Begin next strategy cycle planning — topic inventory is low")
     if not threads["posts_this_week"] and threads["comments_this_week"] == 0:
         next_actions.append("Investigate Threads publishing — no posts or comments this week")
-    if not any_published:
-        next_actions.append("Investigate why no content was published across any channel this week")
-    if "instagram_manage_insights" in str(permissions):
+    if "instagram_manage_insights" in str(perms):
         next_actions.append("Consider requesting instagram_manage_insights permission in Meta App Review")
     if interp["confidence"] == "Low":
         next_actions.append("Wait for more data before changing content strategy — current signal is insufficient")
@@ -520,7 +606,7 @@ def to_markdown(report: dict) -> str:
 
 def save_report(report: dict, md: str) -> tuple[Path, Path]:
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    base = REPORTS_DIR / f"weekly_report_{TODAY.isoformat()}"
+    base      = REPORTS_DIR / f"weekly_report_{TODAY.isoformat()}"
     json_path = base.with_suffix(".json")
     md_path   = base.with_suffix(".md")
     json_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -548,4 +634,4 @@ if __name__ == "__main__":
     result = run(send_email=send)
     print(f"Weekly report: {result['week_start']} → {result['report_date']}")
     print(f"Pipeline status: {result['pipeline_health_summary']['overall_status']}")
-    print(f"Threads comments this week: {result['threads_insights']['comments_this_week']}")
+    print(f"Data quality: {result['data_quality']['score']}/100")

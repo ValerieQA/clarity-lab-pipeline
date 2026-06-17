@@ -28,21 +28,60 @@ def _recent(days_ago: int = 1) -> str:
 
 
 class TestChannelStats:
-    def test_healthy_recent_publish(self):
-        rows = [{"Date Added": _recent(1), "Wix Status": "published",
-                 "Instagram Status": "published", "Facebook Status": "published", "Threads Status": "published"}]
+    def test_healthy_when_any_published(self):
+        """Channel is healthy if published_count > 0 — regardless of Date Added age."""
+        rows = [{"Date Added": _recent(20), "Wix Status": "published",
+                 "Instagram Status": "published", "Facebook Status": "published"}]
         path = _make_topics(rows)
         report = run_health_check(path)
         wix = next(c for c in report["channels"] if c["channel"] == "Wix")
         assert wix["status"] == "healthy"
 
-    def test_critical_no_publish_7_days(self):
-        rows = [{"Date Added": _recent(8), "Wix Status": "published",
-                 "Instagram Status": "", "Facebook Status": "", "Threads Status": ""}]
+    def test_no_false_critical_when_published_exists(self):
+        """Bug: topics batch-added 15 days ago but published → must NOT be CRITICAL."""
+        rows = [
+            {"Date Added": _recent(15), "Wix Status": "published",
+             "Instagram Status": "published", "Facebook Status": "published"},
+            {"Date Added": _recent(14), "Wix Status": "published",
+             "Instagram Status": "published", "Facebook Status": "published"},
+        ]
         path = _make_topics(rows)
-        report = run_health_check(path)
+        with mock.patch("strategy.pipeline_health._threads_last_publish", return_value=_recent(2)):
+            report = run_health_check(path)
+        wix = next(c for c in report["channels"] if c["channel"] == "Wix")
+        ig  = next(c for c in report["channels"] if c["channel"] == "Instagram")
+        fb  = next(c for c in report["channels"] if c["channel"] == "Facebook")
+        assert wix["status"] == "healthy", f"Wix was {wix['status']}: {wix['message']}"
+        assert ig["status"]  == "healthy", f"Instagram was {ig['status']}: {ig['message']}"
+        assert fb["status"]  == "healthy", f"Facebook was {fb['status']}: {fb['message']}"
+
+    def test_critical_when_no_publish_ever(self):
+        """Channel is critical if failed > 0 and published == 0."""
+        rows = [{"Date Added": _recent(1), "Wix Status": "failed",
+                 "Instagram Status": "failed", "Facebook Status": "failed"}]
+        path = _make_topics(rows)
+        with mock.patch("strategy.pipeline_health._threads_last_publish", return_value=None):
+            report = run_health_check(path)
         wix = next(c for c in report["channels"] if c["channel"] == "Wix")
         assert wix["status"] == "critical"
+
+    def test_unknown_when_no_data(self):
+        rows = [{"Date Added": "", "Wix Status": "", "Instagram Status": "", "Facebook Status": "", "Threads Status": ""}]
+        path = _make_topics(rows)
+        with mock.patch("strategy.pipeline_health._threads_last_publish", return_value=None):
+            report = run_health_check(path)
+        wix = next(c for c in report["channels"] if c["channel"] == "Wix")
+        assert wix["status"] == "unknown"
+
+    def test_threads_uses_real_timestamp_not_date_added(self):
+        """Threads health comes from threads_posts.csv, not Date Added."""
+        rows = [{"Date Added": _recent(20)}]
+        path = _make_topics(rows)
+        with mock.patch("strategy.pipeline_health._threads_last_publish", return_value=_recent(2)):
+            report = run_health_check(path)
+        threads_ch = next(c for c in report["channels"] if c["channel"] == "Threads")
+        assert threads_ch["status"] == "healthy"
+        assert threads_ch["via_separate_workflow"] is True
 
     def test_no_publish_ever_is_unknown(self):
         rows = [{"Date Added": "", "Wix Status": "", "Instagram Status": "", "Facebook Status": "", "Threads Status": ""}]
@@ -52,19 +91,28 @@ class TestChannelStats:
         threads_ch = next(c for c in report["channels"] if c["channel"] == "Threads")
         assert threads_ch["status"] == "unknown"
 
+    def test_published_count_is_accurate(self):
+        rows = [
+            {"Wix Status": "published"},
+            {"Wix Status": "published"},
+            {"Wix Status": "failed"},
+        ]
+        path = _make_topics(rows)
+        report = run_health_check(path)
+        wix = next(c for c in report["channels"] if c["channel"] == "Wix")
+        assert wix["published"] == 2
+        assert wix["failed"] == 1
+
 
 class TestCriticalReasons:
     def test_critical_status_always_has_reasons(self):
-        """If overall status is critical or blocked, critical_reasons must be non-empty."""
-        path = _make_topics([{"Date Added": _recent(10), "Wix Status": "published"}])
-        report = run_health_check(path)
+        path = _make_topics([{"Date Added": _recent(10), "Wix Status": "failed"}])
+        with mock.patch("strategy.pipeline_health._threads_last_publish", return_value=None):
+            report = run_health_check(path)
         if report["overall_status"] in ("critical", "blocked"):
-            assert len(report["critical_reasons"]) > 0, (
-                "CRITICAL/BLOCKED status must include explicit critical_reasons"
-            )
+            assert len(report["critical_reasons"]) > 0
 
     def test_healthy_has_no_critical_reasons(self):
-        """Healthy status must not produce critical_reasons."""
         rows = [{"Date Added": _recent(1), "Wix Status": "published",
                  "Instagram Status": "published", "Facebook Status": "published"}]
         path = _make_topics(rows)
@@ -77,12 +125,10 @@ class TestCriticalReasons:
         with mock.patch.dict(os.environ, env, clear=True), \
              mock.patch("strategy.pipeline_health._threads_last_publish", return_value=_recent(1)):
             report = run_health_check(path)
-        # With all vars set and recent publish, no critical reasons
         if report["overall_status"] == "healthy":
             assert report["critical_reasons"] == []
 
     def test_missing_secrets_produce_reasons(self):
-        """Missing publishing secrets must appear in critical_reasons."""
         path = _make_topics([])
         with mock.patch.dict(os.environ, {}, clear=True):
             report = run_health_check(path)
@@ -94,14 +140,14 @@ class TestPermissionsAudit:
         path = _make_topics([])
         report = run_health_check(path)
         assert "permissions_audit" in report
-        assert len(report["permissions_audit"]) == 4  # Wix, Instagram, Facebook, Threads
+        assert len(report["permissions_audit"]) == 4
 
     def test_permissions_audit_has_required_fields(self):
         path = _make_topics([])
         report = run_health_check(path)
         for entry in report["permissions_audit"]:
             for field in ("channel", "publishing", "metrics", "comments", "metrics_note"):
-                assert field in entry, f"Missing field {field} in permissions_audit entry"
+                assert field in entry
 
     def test_permissions_audit_channels(self):
         path = _make_topics([])

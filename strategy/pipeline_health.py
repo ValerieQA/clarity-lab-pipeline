@@ -10,6 +10,11 @@ Health statuses: healthy | warning | critical | blocked
 Key design rule: every non-healthy status MUST have an explicit reason
 in the critical_reasons list. Reports must never show CRITICAL without
 explaining why.
+
+Bug note: topics.csv has a `Date Added` column (when added to queue),
+NOT a publish timestamp. Published topics may have been published days
+after their Date Added. Do NOT use date_added as a proxy for publish date.
+Channel health is derived from published_count, not days-since-date-added.
 """
 
 from __future__ import annotations
@@ -30,7 +35,6 @@ CRIT_DAYS_NO_PUBLISH = 7
 TOKEN_WARN_DAYS = 14
 TOKEN_CRIT_DAYS = 3
 
-# Publishing secrets required for each channel
 REQUIRED_ENV_VARS = {
     "wix":        ["WIX_SITE_ID", "WIX_API_KEY"],
     "instagram":  ["IG_USER_ID", "IG_TOKEN"],
@@ -46,9 +50,6 @@ TOKEN_EXPIRY_VARS = {
     "threads":   "THREADS_TOKEN_EXPIRES_AT",
 }
 
-# Known permissions audit per channel.
-# These describe what IS and ISN'T available at the API level,
-# independent of whether secrets are set.
 CHANNEL_PERMISSIONS_AUDIT = {
     "Wix": {
         "publishing":  ("available", "WIX_API_KEY + WIX_SITE_ID"),
@@ -133,14 +134,18 @@ def _channel_stats(topics_file: Path) -> dict[str, dict]:
     """
     Read topics.csv and aggregate per-channel publish stats.
 
-    Note: Threads Status in topics.csv is typically empty or 'skipped' because
-    Threads publishing is managed by threads_workflow.yml independently.
-    Threads publish history lives in data/threads_posts.csv, not topics.csv.
-    This is expected behaviour, not a bug.
+    IMPORTANT: `Date Added` is when a topic was added to the queue, NOT when
+    it was published. Topics are often batch-added and published later. We
+    count published/failed totals but do NOT derive "days since last publish"
+    from date_added — that would be misleading.
+
+    Threads Status in topics.csv is always empty/skipped because Threads
+    publishing is managed by threads_workflow.yml independently. Threads
+    publish history lives in data/threads_posts.csv.
     """
     channels = ["Wix", "Instagram", "Facebook", "Threads"]
     stats: dict[str, dict] = {
-        ch: {"published": 0, "failed": 0, "partial": 0, "last_published_at": None}
+        ch: {"published": 0, "failed": 0, "partial": 0}
         for ch in channels
     }
 
@@ -150,17 +155,11 @@ def _channel_stats(topics_file: Path) -> dict[str, dict]:
     with topics_file.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            date_added = row.get("Date Added", "").strip()
             for ch in channels:
                 col = f"{ch} Status"
                 val = row.get(col, "").strip().lower()
                 if val == "published":
                     stats[ch]["published"] += 1
-                    if date_added and (
-                        stats[ch]["last_published_at"] is None
-                        or date_added > stats[ch]["last_published_at"]
-                    ):
-                        stats[ch]["last_published_at"] = date_added
                 elif val in {"failed", "error"}:
                     stats[ch]["failed"] += 1
                 elif val in {"partial_failure", "partial failure"}:
@@ -170,7 +169,11 @@ def _channel_stats(topics_file: Path) -> dict[str, dict]:
 
 
 def _threads_last_publish() -> Optional[str]:
-    """Check data/threads_posts.csv for last Threads publish date."""
+    """
+    Check data/threads_posts.csv for last Threads publish date.
+    This is the ONLY reliable publish timestamp we have — Threads posts
+    have actual created_at/published_at timestamps from the API.
+    """
     posts_file = Path("data/threads_posts.csv")
     if not posts_file.exists():
         return None
@@ -209,48 +212,72 @@ def run_health_check(topics_file: Optional[Path] = None) -> dict:
     token_issues  = _check_token_expiry()
     channel_stats = _channel_stats(path)
 
-    # Override Threads last_published_at from threads_posts.csv
+    # Threads: use real timestamps from threads_posts.csv
     threads_last = _threads_last_publish()
-    if threads_last and channel_stats["Threads"]["last_published_at"] is None:
-        channel_stats["Threads"]["last_published_at"] = threads_last
-        # Mark as separate-workflow channel
-        channel_stats["Threads"]["via_separate_workflow"] = True
+    threads_days_since = _days_since(threads_last)
 
     channel_health: list[dict] = []
     for ch, s in channel_stats.items():
-        days_since = _days_since(s.get("last_published_at"))
-        via_separate = s.get("via_separate_workflow", False)
+        published = s["published"]
+        failed    = s["failed"]
+        partial   = s["partial"]
 
-        if ch == "Threads" and via_separate and days_since is not None:
-            # Threads is healthy if it's been publishing via its own workflow
-            if days_since >= CRIT_DAYS_NO_PUBLISH:
-                ch_status = "warning"
-                ch_msg = f"Last Threads publish {days_since} day(s) ago (via threads_workflow.yml)."
+        if ch == "Threads":
+            # Threads is tracked via threads_posts.csv (has real timestamps)
+            if threads_last is not None:
+                if threads_days_since is not None and threads_days_since >= CRIT_DAYS_NO_PUBLISH:
+                    ch_status = "warning"
+                    ch_msg = f"Last Threads publish {threads_days_since} day(s) ago (via threads_workflow.yml)."
+                else:
+                    ch_status = "healthy"
+                    ch_msg = (
+                        f"Last Threads publish {threads_days_since} day(s) ago (via threads_workflow.yml)."
+                        if threads_days_since is not None
+                        else "Threads publishing active (via threads_workflow.yml)."
+                    )
             else:
-                ch_status = "healthy"
-                ch_msg = f"Last Threads publish {days_since} day(s) ago (via threads_workflow.yml)."
-        elif days_since is None:
-            ch_status = "unknown"
-            ch_msg = f"No successful {ch} publish recorded."
-        elif days_since >= CRIT_DAYS_NO_PUBLISH:
-            ch_status = "critical"
-            ch_msg = f"No {ch} publish in {days_since} day(s)."
-        elif days_since >= WARN_DAYS_NO_PUBLISH:
-            ch_status = "warning"
-            ch_msg = f"No {ch} publish in {days_since} day(s)."
-        else:
+                ch_status = "unknown"
+                ch_msg = "No Threads post history found in data/threads_posts.csv."
+
+            channel_health.append({
+                "channel": ch,
+                "status": ch_status,
+                "published": published,
+                "failed": failed,
+                "partial": partial,
+                "last_published_at": threads_last,
+                "days_since_last_publish": threads_days_since,
+                "via_separate_workflow": True,
+                "message": ch_msg,
+            })
+            continue
+
+        # Wix / Instagram / Facebook:
+        # Use published_count as health signal — NOT date_added (unreliable as publish proxy).
+        # Topics are batch-added and published later; date_added != publish date.
+        if published > 0:
             ch_status = "healthy"
-            ch_msg = f"Last {ch} publish {days_since} day(s) ago."
+            ch_msg = f"{published} topic(s) successfully published to {ch}."
+            if failed > 0:
+                ch_msg += f" ({failed} failure(s) also recorded.)"
+            elif partial > 0:
+                ch_msg += f" ({partial} partial failure(s) also recorded.)"
+        elif failed > 0 or partial > 0:
+            ch_status = "critical"
+            ch_msg = f"No successful {ch} publish recorded. {failed} failure(s), {partial} partial failure(s)."
+        else:
+            ch_status = "unknown"
+            ch_msg = f"No {ch} publish history found in topics.csv."
 
         channel_health.append({
             "channel": ch,
             "status": ch_status,
-            "published": s["published"],
-            "failed": s["failed"],
-            "partial": s["partial"],
-            "last_published_at": s.get("last_published_at"),
-            "days_since_last_publish": days_since,
-            "via_separate_workflow": via_separate,
+            "published": published,
+            "failed": failed,
+            "partial": partial,
+            "last_published_at": None,
+            "days_since_last_publish": None,
+            "via_separate_workflow": False,
             "message": ch_msg,
         })
 
@@ -281,7 +308,7 @@ def run_health_check(topics_file: Optional[Path] = None) -> dict:
         for svc, vars_ in missing_env.items()
     ]
 
-    # Build explicit critical_reasons — every non-healthy status must be explained
+    # Build explicit critical_reasons
     critical_reasons: list[str] = []
     for t in token_issues:
         if t["status"] in ("blocked", "critical"):
@@ -292,12 +319,11 @@ def run_health_check(topics_file: Optional[Path] = None) -> dict:
         if ch["status"] in ("critical",):
             critical_reasons.append(ch["message"])
 
-    # Build action_items list — concrete next steps
+    # Build action_items list
     action_items: list[str] = []
     for t in token_issues:
         action_items.append(t["action"])
     for m in missing_env_issues:
-        # Only surface publishing-critical services to avoid noise about metrics-only vars
         if m["service"] in ("wix", "instagram", "facebook", "threads", "openai"):
             action_items.append(m["action"])
     for ch in channel_health:
