@@ -2,7 +2,7 @@ name: Clarity Lab — Daily Report
 
 on:
   schedule:
-    - cron: '0 10 * * *'   # Daily 10:00 UTC (after pipeline runs at 9:00)
+    - cron: '0 17 * * *'   # Daily 17:00 UTC (20:00 Kyiv) — after main pipeline + most Threads posts
   workflow_dispatch:
     inputs:
       send_email:

@@ -2,7 +2,7 @@ name: Clarity Lab — Weekly Strategy Report
 
 on:
   schedule:
-    - cron: '0 11 * * 0'   # Every Sunday 11:00 UTC
+    - cron: '0 19 * * 5'   # Every Friday 19:00 UTC (22:00 Kyiv) — after all Friday posts
   workflow_dispatch:
     inputs:
       send_email:
