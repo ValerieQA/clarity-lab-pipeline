@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-06-22T12:45:00.593992+00:00",
+  "window_start": "2026-06-15T12:45:00.593992+00:00",
+  "published_posts_count": 12,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_2ccee6a5d7e73958",
+      "external_threads_id": "18106817203786664",
+      "score": 0,
+      "text_preview": "People often chase answers, not realizing that the questions they ask shape what they uncover. A vague question leads to hazy understanding, while a precise question reveals hidden layers. The key isn’t the answer—it’s whether your question"
+    },
+    {
+      "post_id": "threads_43089f0d4d01bcb0",
+      "external_threads_id": "18134358847572435",
+      "score": 0,
+      "text_preview": "Many people seek answers but overlook the power of questions. A vague question yields vague insights. A precise question can reveal unseen layers. The right question isn't about solutions; it's about what it allows you to see differently."
+    },
+    {
+      "post_id": "threads_6f20314f0c1580a3",
+      "external_threads_id": "18124418455645413",
+      "score": 0,
+      "text_preview": "People often chase answers without considering the questions. Ask a vague question, and you’ll find only fog. But a precise question? It cuts through, revealing what's hidden. It's not the answer that matters most, but the clarity the right"
+    },
+    {
+      "post_id": "threads_ef0c404b26041806",
+      "external_threads_id": "18039787244796921",
+      "score": 0,
+      "text_preview": "Many people search for answers but overlook the questions guiding them. A vague question leads to blurry insights; a precise one reveals hidden patterns. It's not about the answers we find, but the clarity our questions bring."
+    },
+    {
+      "post_id": "threads_facebe8ce242483f",
+      "external_threads_id": "18119933926689826",
+      "score": 0,
+      "text_preview": "Many people chase answers without realizing the question shapes their path. Vague questions lead to murky understandings. When you ask precise questions, hidden layers reveal themselves. It's not the answer but the question that transforms "
+    }
+  ],
+  "most_common_themes": [
+    [
+      "question",
+      14
+    ],
+    [
+      "questions",
+      9
+    ],
+    [
+      "space",
+      9
+    ],
+    [
+      "people",
+      8
+    ],
+    [
+      "answers",
+      8
+    ],
+    [
+      "vague",
+      7
+    ],
+    [
+      "precise",
+      6
+    ],
+    [
+      "awareness",
+      6
+    ],
+    [
+      "response",
+      6
+    ],
+    [
+      "hidden",
+      5
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind question",
+    "Explore the hidden pattern behind questions",
+    "Explore the hidden pattern behind space",
+    "Explore the hidden pattern behind people",
+    "Explore the hidden pattern behind answers"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'question'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}
