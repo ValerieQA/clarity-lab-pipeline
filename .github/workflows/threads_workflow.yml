@@ -62,11 +62,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - run: pip install -r requirements.txt
-
-      - name: Random delay (0–30 min)
-        run: python -c "import random,time; d=random.randint(0,1800); print(f'Sleeping {d}s ({d//60}m {d%60}s)'); time.sleep(d)"
 
       - name: Run Threads pipeline
         env:
@@ -81,7 +79,7 @@ jobs:
           THREADS_DAILY_POST_LIMIT:                ${{ vars.THREADS_DAILY_POST_LIMIT || '3' }}
           THREADS_POSTS_PER_RUN:                   ${{ vars.THREADS_POSTS_PER_RUN || '1' }}
           THREADS_SCHEDULE_MODE:                   ${{ vars.THREADS_SCHEDULE_MODE || 'spaced' }}
-          ENABLE_THREADS_COMMENT_COLLECTION:       'true'
+          ENABLE_THREADS_COMMENT_COLLECTION:       'false'
           ENABLE_THREADS_AUTO_REPLIES:             'false'
           ENABLE_PROMPT_EVOLUTION_RECOMMENDATIONS: 'true'
           ENABLE_AUTO_PROMPT_UPDATES:              'false'
@@ -100,7 +98,7 @@ jobs:
         run: |
           git config user.name  "Clarity Lab Bot"
           git config user.email "bot@inneros.online"
-          git add data/threads_posts.csv data/threads_comments.csv data/prompt_evolution_log.csv || true
+          git add data/threads_posts.csv data/prompt_evolution_log.csv || true
           git diff --staged --quiet || git commit -m "🧵 Threads post: $(date -u +'%Y-%m-%d %H:%M')"
           git push
 
@@ -127,6 +125,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - run: pip install -r requirements.txt
 
@@ -174,6 +173,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - run: pip install -r requirements.txt
 
