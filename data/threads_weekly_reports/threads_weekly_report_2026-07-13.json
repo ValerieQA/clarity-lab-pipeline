@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-07-13T10:17:48.647487+00:00",
+  "window_start": "2026-07-06T10:17:48.647487+00:00",
+  "published_posts_count": 15,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_b5677d04d10e8ad2",
+      "external_threads_id": "17958323757162994",
+      "score": 0,
+      "text_preview": "Many deal with stress by managing symptoms, a familiar routine of coping. But integrating is different—it shifts our relationship with the root cause. Surface management and deep change aren't the same. Both matter, yet only one transforms "
+    },
+    {
+      "post_id": "threads_e3aa0685d2dc06fa",
+      "external_threads_id": "18126701650731579",
+      "score": 0,
+      "text_preview": "Many find themselves coping with life's challenges, managing surface discomfort just enough to get by. But integration shifts the relationship, addressing what's beneath. Both play roles, yet they move differently—one skims the top, the oth"
+    },
+    {
+      "post_id": "threads_f2344117174497af",
+      "external_threads_id": "18135358039576588",
+      "score": 0,
+      "text_preview": "Many find themselves managing life's challenges, believing they're resolving them. Coping handles the surface, offering temporary relief. Integration shifts the core relationship, offering transformation. Both have roles, yet they aren't th"
+    },
+    {
+      "post_id": "threads_c6b94d91feb07ec8",
+      "external_threads_id": "18078749399289035",
+      "score": 0,
+      "text_preview": "Many people cope by managing the surface of their difficulties, keeping things afloat. Integration, however, shifts the relationship with what lies beneath. Both are useful, yet they aren't the same movement. Recognizing this distinction ca"
+    },
+    {
+      "post_id": "threads_c0ccde79702fcf5f",
+      "external_threads_id": "18087505679559811",
+      "score": 0,
+      "text_preview": "Many find themselves managing stress with temporary fixes, yet never addressing the root. Coping smooths the surface, but integration shifts the foundation. Both serve a purpose, yet they aren't the same journey. Recognizing this difference"
+    }
+  ],
+  "most_common_themes": [
+    [
+      "silence",
+      12
+    ],
+    [
+      "recognizing",
+      10
+    ],
+    [
+      "avoidance",
+      10
+    ],
+    [
+      "quiet",
+      8
+    ],
+    [
+      "sometimes",
+      7
+    ],
+    [
+      "space",
+      7
+    ],
+    [
+      "awareness",
+      7
+    ],
+    [
+      "managing",
+      6
+    ],
+    [
+      "shifts",
+      6
+    ],
+    [
+      "surface",
+      6
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind silence",
+    "Explore the hidden pattern behind recognizing",
+    "Explore the hidden pattern behind avoidance",
+    "Explore the hidden pattern behind quiet",
+    "Explore the hidden pattern behind sometimes"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'silence'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}
