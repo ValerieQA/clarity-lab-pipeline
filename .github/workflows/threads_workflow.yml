@@ -1,22 +1,15 @@
 name: Clarity Lab — Threads Pipeline
 
-# Schedule overview:
-#   01:00 UTC  — publish post
-#   15:00 UTC  — publish post
-#   20:00 UTC  — publish post
-#   06:00 UTC  — collect comments
-#   12:00 UTC  — collect comments
-#   18:00 UTC  — collect comments
+# Schedule overview (reduced from 6 runs/day to 2):
+#   12:00 UTC  — publish post (1x daily)
+#   21:00 UTC  — collect comments (1x daily)
 #   Monday 07:00 UTC — weekly learning report
+# Reduced from 3 publish + 3 comment-collect to 1+1 to conserve runner minutes.
 
 on:
   schedule:
-    - cron: '0 1 * * *'
-    - cron: '0 15 * * *'
-    - cron: '0 20 * * *'
-    - cron: '0 6 * * *'
     - cron: '0 12 * * *'
-    - cron: '0 18 * * *'
+    - cron: '0 21 * * *'
     - cron: '0 7 * * 1'
 
   workflow_dispatch:
@@ -38,17 +31,13 @@ jobs:
 
   # ──────────────────────────────────────────────────────────
   # JOB 1: Publish a Threads post
-  # Runs at 01:00 / 15:00 / 20:00 UTC and on manual dispatch.
+  # Runs at 12:00 UTC (1x daily) and on manual dispatch.
   # ──────────────────────────────────────────────────────────
   publish:
     name: Publish Threads post
     runs-on: ubuntu-latest
     if: |
-      (github.event_name == 'schedule' && (
-        github.event.schedule == '0 1 * * *' ||
-        github.event.schedule == '0 15 * * *' ||
-        github.event.schedule == '0 20 * * *'
-      )) ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 12 * * *') ||
       (github.event_name == 'workflow_dispatch' && (
         github.event.inputs.mode == 'publish' ||
         github.event.inputs.mode == 'dry_run'
@@ -104,17 +93,13 @@ jobs:
 
   # ──────────────────────────────────────────────────────────
   # JOB 2: Collect comments
-  # Runs at 06:00 / 12:00 / 18:00 UTC and on manual dispatch.
+  # Runs at 21:00 UTC (1x daily) and on manual dispatch.
   # ──────────────────────────────────────────────────────────
   collect_comments:
     name: Collect Threads comments
     runs-on: ubuntu-latest
     if: |
-      (github.event_name == 'schedule' && (
-        github.event.schedule == '0 6 * * *' ||
-        github.event.schedule == '0 12 * * *' ||
-        github.event.schedule == '0 18 * * *'
-      )) ||
+      (github.event_name == 'schedule' && github.event.schedule == '0 21 * * *') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'collect_comments')
 
     steps:
