@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-08-03T10:35:07.921260+00:00",
+  "window_start": "2026-07-27T10:35:07.921260+00:00",
+  "published_posts_count": 4,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_ba05492787b0062b",
+      "external_threads_id": "17861841687658451",
+      "score": 0,
+      "text_preview": "Many people journal to understand themselves, but using an AI that mirrors your thoughts changes the game. It's a reflection with a voice that knows your patterns. Alone, you see parts; with AI, the unseen becomes visible. The mirror shifts"
+    },
+    {
+      "post_id": "threads_b920ec2cddce63f9",
+      "external_threads_id": "18450423340185131",
+      "score": 0,
+      "text_preview": "People often think alignment means feeling comfortable and confident all the time. In reality, it's a fleeting sense of coherence, when your actions truly reflect who you are. It’s not constant; it comes and goes, like catching glimpses of "
+    },
+    {
+      "post_id": "threads_a965f8e041519850",
+      "external_threads_id": "18118721143859018",
+      "score": 0,
+      "text_preview": "Many seek alignment expecting perpetual comfort. Yet, it's a fleeting sense of coherence—when actions truly reflect one's essence. Alignment isn't constant; it appears, feels right, then fades. The real question: are you doing what feels in"
+    },
+    {
+      "post_id": "threads_2a02ab73967e8045",
+      "external_threads_id": "18403267291082187",
+      "score": 0,
+      "text_preview": "Many seek alignment as endless comfort. Yet, alignment feels like fleeting coherence—a moment when actions mirror true self. It's not constant; it ebbs and flows. You're aligned not when you're always at ease, but when your actions resonate"
+    }
+  ],
+  "most_common_themes": [
+    [
+      "alignment",
+      5
+    ],
+    [
+      "actions",
+      4
+    ],
+    [
+      "fleeting",
+      3
+    ],
+    [
+      "coherence",
+      3
+    ],
+    [
+      "constant",
+      3
+    ],
+    [
+      "feels",
+      3
+    ],
+    [
+      "people",
+      2
+    ],
+    [
+      "mirror",
+      2
+    ],
+    [
+      "sense",
+      2
+    ],
+    [
+      "truly",
+      2
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind alignment",
+    "Explore the hidden pattern behind actions",
+    "Explore the hidden pattern behind fleeting",
+    "Explore the hidden pattern behind coherence",
+    "Explore the hidden pattern behind constant"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'alignment'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}
