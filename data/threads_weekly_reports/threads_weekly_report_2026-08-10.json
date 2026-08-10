@@ -1,0 +1,94 @@
+{
+  "generated_at": "2026-08-10T08:22:01.839228+00:00",
+  "window_start": "2026-08-03T08:22:01.839228+00:00",
+  "published_posts_count": 5,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_edd9b9f3ca1f4628",
+      "external_threads_id": "18120221900307158",
+      "score": 0,
+      "text_preview": "The same feedback can resonate differently depending on when we receive it. Not because the words changed, but because we did. Our readiness at that moment shapes how we perceive it. Why does advice that once seemed irrelevant suddenly clic"
+    },
+    {
+      "post_id": "threads_938bda857f1a8ae9",
+      "external_threads_id": "18104487770469701",
+      "score": 0,
+      "text_preview": "Some advice seems pointless until it suddenly clicks. It's not the words that change, but us. Different times, different needs, different readiness. Familiar words become revelations when we're ready to hear them. Why now, not then? The lis"
+    },
+    {
+      "post_id": "threads_cecfec5a8af6cd3a",
+      "external_threads_id": "17942001777277786",
+      "score": 0,
+      "text_preview": "Many people shape their days around what they think they should be, often managing parts of themselves that don't fit the mold. Living from one's nature means recognizing these tweaks and slowly aligning the everyday self with the true self"
+    },
+    {
+      "post_id": "threads_d261a514e43ebad4",
+      "external_threads_id": "17975222244086081",
+      "score": 0,
+      "text_preview": "Most people craft strategies to fit into expected molds, often at odds with their true nature. Living authentically means bridging the gap between who we are and who we've adapted to be. It's a subtle shift from managing our differences to "
+    },
+    {
+      "post_id": "threads_9172582aab048eb0",
+      "external_threads_id": "18381253060233642",
+      "score": 0,
+      "text_preview": "Many people develop strategies to fit into expected patterns, often managing parts of themselves that feel out of place. Living from one's nature involves noticing these adaptations and slowly closing the gap between who we are and who we f"
+    }
+  ],
+  "most_common_themes": [
+    [
+      "words",
+      3
+    ],
+    [
+      "different",
+      3
+    ],
+    [
+      "people",
+      3
+    ],
+    [
+      "often",
+      3
+    ],
+    [
+      "managing",
+      3
+    ],
+    [
+      "living",
+      3
+    ],
+    [
+      "nature",
+      3
+    ],
+    [
+      "readiness",
+      2
+    ],
+    [
+      "shapes",
+      2
+    ],
+    [
+      "advice",
+      2
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind words",
+    "Explore the hidden pattern behind different",
+    "Explore the hidden pattern behind people",
+    "Explore the hidden pattern behind often",
+    "Explore the hidden pattern behind managing"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'words'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}
