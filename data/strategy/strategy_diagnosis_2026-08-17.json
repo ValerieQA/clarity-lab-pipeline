@@ -1,0 +1,107 @@
+{
+  "analysis_date": "2026-08-17",
+  "generated_at": "2026-08-17T10:57:53.740823+00:00",
+  "cycle_summary": {
+    "total_topics": 30,
+    "published_topics": 29,
+    "failed_topics": 1,
+    "remaining_topics": 0,
+    "inventory_status": "critical"
+  },
+  "facts": {
+    "published_topic_titles": [
+      "The difference between information and orientation",
+      "Why clarity reduces anxiety",
+      "What it means to think in circles",
+      "The gap between knowing and living",
+      "How AI reflects the structure of your thinking",
+      "Why asking the right question matters more than having the right answer",
+      "The difference between a reaction and a response",
+      "What personalization actually means in AI",
+      "How language shapes what we are able to notice",
+      "The quiet cost of self-monitoring",
+      "What it feels like to be seen accurately",
+      "Why some insights do not stick",
+      "The relationship between attention and meaning",
+      "What Human Design reveals and what it cannot",
+      "The difference between coping and integrating",
+      "When silence is not avoidance",
+      "The role of contradiction in self-understanding",
+      "How memory shapes present perception",
+      "What it means to trust your own thinking",
+      "The difference between complexity and confusion",
+      "Why some people resist being understood",
+      "What Gene Keys reveal about repeated patterns",
+      "The cost of explaining yourself",
+      "How an AI assistant changes the experience of self-reflection",
+      "What alignment actually feels like",
+      "The difference between being honest and being clear",
+      "Why the same feedback lands differently at different times",
+      "What it means to live from your nature rather than against it",
+      "The quiet presence of an accurate witness"
+    ],
+    "failed_topic_titles": [
+      "The pattern you keep returning to"
+    ],
+    "top_content_pillars": [
+      "Patterns & Self-knowledge",
+      "Clarity as Process",
+      "Language & Thinking"
+    ],
+    "threads_posts_count": 114,
+    "threads_comments_count": 2,
+    "posts_with_comments": 2,
+    "comment_themes": [
+      "internal",
+      "reduces",
+      "it’s",
+      "where",
+      "start",
+      "isn't",
+      "there",
+      "there's"
+    ],
+    "channel_counts": {
+      "wix": 27,
+      "instagram": 27,
+      "facebook": 27,
+      "threads": 0
+    }
+  },
+  "interpretation": {
+    "what_strategy_was_tested": "Content across 3 pillar(s): Patterns & Self-knowledge, Clarity as Process, Language & Thinking.",
+    "strongest_signal_channel": "Threads",
+    "comment_topics_worth_continuing": [
+      "internal",
+      "reduces",
+      "it’s"
+    ],
+    "best_performing_posts": [],
+    "what_is_unclear_due_to_missing_data": [
+      "WEAK SIGNAL: fewer than 5 Threads comments collected — comment theme analysis is not statistically meaningful."
+    ],
+    "recent_prompt_evolution": [
+      "Test one Threads opening that names the audience tension around 'alignment'.",
+      "Test one Threads opening that names the audience tension around 'words'.",
+      "Keep current Threads prompt unchanged until more comments are collected."
+    ]
+  },
+  "recommendations": {
+    "continue": [
+      "internal",
+      "reduces",
+      "it’s"
+    ],
+    "stop_or_test_differently": [
+      "The pattern you keep returning to"
+    ],
+    "missing_data_to_resolve": [
+      "WEAK SIGNAL: fewer than 5 Threads comments collected — comment theme analysis is not statistically meaningful."
+    ],
+    "next_steps": [
+      "Collect Instagram and Facebook post IDs to enable metric collection.",
+      "Ensure Threads comments are collected before running strategy analysis.",
+      "Review Wix dashboard for article view counts (not available via API)."
+    ]
+  }
+}
