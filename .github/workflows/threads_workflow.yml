@@ -8,7 +8,6 @@ name: Clarity Lab — Threads Pipeline
 
 on:
   schedule:
-    - cron: '0 12 * * *'
     - cron: '0 21 * * *'
     - cron: '0 7 * * 1'
 

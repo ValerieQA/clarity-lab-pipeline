@@ -130,3 +130,26 @@ class FacebookConfig:
             app_secret=os.getenv("FACEBOOK_APP_SECRET", ""),
             api_version=os.getenv("FB_API_VERSION", "v19.0"),
         )
+
+
+@dataclass(frozen=True)
+class LinkedInConfig:
+    access_token: str = ""
+    person_urn: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    api_version: str = "202401"
+    enable_publishing: bool = False
+    require_approval: bool = True
+
+    @classmethod
+    def from_env(cls) -> "LinkedInConfig":
+        return cls(
+            access_token=os.getenv("LINKEDIN_ACCESS_TOKEN", ""),
+            person_urn=os.getenv("LINKEDIN_PERSON_URN", ""),
+            client_id=os.getenv("LINKEDIN_CLIENT_ID", ""),
+            client_secret=os.getenv("LINKEDIN_CLIENT_SECRET", ""),
+            api_version=os.getenv("LINKEDIN_API_VERSION", "202401"),
+            enable_publishing=env_bool("ENABLE_LINKEDIN_PUBLISHING", False),
+            require_approval=env_bool("LINKEDIN_REQUIRE_APPROVAL", True),
+        )
