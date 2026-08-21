@@ -1,0 +1,10 @@
+{
+  "brief_date": "2026-08-21",
+  "generated_at": "2026-08-21T10:58:33.275227+00:00",
+  "trigger": "cycle_complete",
+  "external_web_research_performed": false,
+  "gpt_used": false,
+  "diagnosis_date": "2026-08-21",
+  "remaining_topics": 0,
+  "brief": "## Internal Research Brief (No External Web Research Performed)\n\n> External web research was not performed in this run.\n> This brief is based entirely on existing pipeline data.\n\n### Current Audience Hypothesis\nHypothesis based on Threads comment themes: audience engages with topics around internal, reduces, it’s.\n\n### Current Positioning\nClarity Lab is positioned around psychology, self-understanding, and internal clarity.\nContent pillars active this cycle: Patterns & Self-knowledge, Clarity as Process, Language & Thinking\n\n### What Was Tested\nContent across 3 pillar(s): Patterns & Self-knowledge, Clarity as Process, Language & Thinking.\n\n### What Got No Response\nFailed or zero-signal topics: The pattern you keep returning to\n\n### What Showed Signal\nTopics with Threads comment engagement: internal, reduces, it’s\n\n### Possible Next Strategic Directions\n1. Deepen content around recurring comment themes: internal, reduces, it’s\n2. Revisit failed topics with a different angle or format.\n3. Expand to audience pain points not yet covered in existing topics.\n\n### Missing Data That Would Improve This Brief\n- WEAK SIGNAL: fewer than 5 Threads comments collected — comment theme analysis is not statistically meaningful."
+}
