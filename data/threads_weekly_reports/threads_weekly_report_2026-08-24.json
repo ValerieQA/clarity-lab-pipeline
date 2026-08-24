@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-08-24T07:51:39.230368+00:00",
+  "window_start": "2026-08-17T07:51:39.230368+00:00",
+  "published_posts_count": 0,
+  "best_performing_posts": [],
+  "most_common_themes": [],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Reflect on the strongest audience question from this week"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Keep current Threads prompt unchanged until more comments are collected.",
+      "rationale": "Insufficient recent engagement signal for safe prompt evolution."
+    }
+  ]
+}
