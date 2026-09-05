@@ -64,9 +64,53 @@ def _gpt_strategy(diagnosis: dict, research: dict, api_key: str) -> tuple[str, l
     brief  = research.get("brief", "")
     existing = list(_existing_titles())[:20]  # send subset to avoid token bloat
 
-    prompt = f"""You are a content strategist for Clarity Lab — a psychology and self-understanding brand.
+    evidence = facts.get("evidence_level", "none")
+    evidence_note = diagnosis.get("interpretation", {}).get("evidence_note", "")
+
+    if evidence == "usable":
+        mandate = """The cycle produced enough audience response to reason from.
+You may propose an adjustment to positioning or audience, but only where the data
+supports it. Say plainly which fact supports which change."""
+    else:
+        mandate = f"""EVIDENCE IS INSUFFICIENT. {evidence_note}
+
+Therefore: DO NOT propose a new positioning. DO NOT propose a new audience.
+DO NOT invent content pillars. Under "New positioning hypothesis" and
+"New audience hypothesis" write that they stay unchanged because this cycle
+produced no evidence to change them, and say what would have to be collected
+before that question can be reopened.
+
+Your only real task this cycle is the 30 topics. Generate them inside the
+existing pillars."""
+
+    prompt = f"""You are a content strategist for Clarity Lab.
+
+## What Clarity Lab is
+
+An AI that reflects a person's own thinking back to them accurately — the words
+they choose, who acts in their sentences, how many options they can see, which
+phrases they have repeated for months. It does not advise, teach, or encourage.
+
+Its reader has already done the work: therapy, books, courses. She can name her
+own patterns and the naming stopped helping. She is not confused and not in
+crisis. Advice is the single thing she has had enough of.
+
+## Hard constraints on anything you write
+
+- Never propose Human Design, Gene Keys, astrology, charts or types. They are
+  not part of the public product.
+- Never propose a direction described with the words: actionable, steps,
+  roadmap, empower, empowering, unlock, transform, journey, framework,
+  practical guide, tools and strategies. That register is the opposite of this
+  brand and proposing it has already happened once by accident.
+- Topics are situations a person recognises, not lessons she is taught.
+
+## Mandate for this cycle
+
+{mandate}
 
 ## Current cycle data
+- Evidence level: {evidence}
 - Top content pillars: {', '.join(facts.get('top_content_pillars', [])) or 'unknown'}
 - Comment themes: {', '.join(facts.get('comment_themes', [])) or 'none'}
 - What to continue: {', '.join(recs.get('continue', [])) or 'unknown'}
