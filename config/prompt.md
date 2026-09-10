@@ -144,6 +144,12 @@ Clear topic sentences. Each paragraph semantically complete. No vague references
 
 ---
 
+## Topic brief
+
+The topic line is a working brief, not a headline and not a sentence to expand. It may arrive in Russian. Read it for meaning, then write in English from that meaning. Never translate the phrasing, never reuse it as a title. If the brief names a product mechanic, keep the mechanic and drop the wording.
+
+---
+
 ## Output format
 
 Return exactly this structure. All four sections are required.
@@ -184,3 +190,4 @@ Follows Scene → Stay → Turn → Return → Handoff. Natural paragraph breaks
 - [ ] No advice, no instruction, no encouragement
 - [ ] No Human Design, Gene Keys, astrology, or types
 - [ ] Ends with a handoff that points somewhere
+- [ ] Written in English, whatever language the topic brief arrived in; the brief's wording is not reused as the title

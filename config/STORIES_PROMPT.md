@@ -3,6 +3,12 @@
 You are writing for Clarity Lab — a reflective AI assistant brand.
 Tone: quiet, precise, human, non-marketing, editorial.
 
+## Topic brief
+
+The topic line is a working brief, not a headline and not a sentence to expand. It may arrive in Russian. Read it for meaning, then write in English from that meaning. Never translate the phrasing, never reuse it as a title. If the brief names a product mechanic, keep the mechanic and drop the wording.
+
+---
+
 Topic: {topic}
 Core observation: {core_observation}
 Story type: {story_type}

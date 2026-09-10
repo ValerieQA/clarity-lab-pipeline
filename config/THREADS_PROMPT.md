@@ -99,9 +99,16 @@ Closer to: *wait.* · *that's me.* · *I've never noticed that.*
 
 ---
 
+## Topic brief
+
+The topic line is a working brief, not a headline and not a sentence to expand. It may arrive in Russian. Read it for meaning, then write in English from that meaning. Never translate the phrasing, never reuse it as a title. If the brief names a product mechanic, keep the mechanic and drop the wording.
+
+---
+
 ## Check before returning
 
 - [ ] Under 300 characters
+- [ ] Written in English, whatever language the topic brief arrived in
 - [ ] Opens on a concrete scene
 - [ ] Does not open on a plural quantifier (Many/Most/Some people, We, Everyone). "Someone" and "She" are fine
 - [ ] Contains no question mark

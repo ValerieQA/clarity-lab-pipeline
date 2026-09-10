@@ -22,6 +22,12 @@ Often she works for herself, or she has spent a long career being the reliable o
 
 ---
 
+## Topic brief
+
+The topic line is a working brief, not a headline and not a sentence to expand. It may arrive in Russian. Read it for meaning, then write in English from that meaning. Never translate the phrasing, never reuse it as a title. If the brief names a product mechanic, keep the mechanic and drop the wording.
+
+---
+
 ## Input
 
 Topic: {title}

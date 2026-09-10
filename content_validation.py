@@ -12,6 +12,10 @@ class ContentValidationError(Exception):
 
 REQUIRED_ARTICLE_SECTIONS = ("title", "instagram", "website", "geo")
 
+# Topic briefs may be written in Russian; published output must not be.
+# A Cyrillic title would also collapse the Wix slug to an empty string.
+CYRILLIC = re.compile(r"[Ѐ-ӿ]")
+
 
 def parse_article_sections(raw_text: str) -> dict[str, str]:
     patterns = {
@@ -36,6 +40,9 @@ def validate_article_sections(sections: dict[str, str]) -> None:
         raise ContentValidationError("Article title is unexpectedly long")
     if len(sections["website"].split()) < 120:
         raise ContentValidationError("Website article is too short to publish safely")
+    cyrillic = [key for key in REQUIRED_ARTICLE_SECTIONS if CYRILLIC.search(sections[key])]
+    if cyrillic:
+        raise ContentValidationError(f"Article sections contain Cyrillic text: {', '.join(cyrillic)}")
 
 
 def parse_thread_series(raw_text: str) -> list[str]:
@@ -56,3 +63,6 @@ def validate_threads_posts(posts: list[str]) -> None:
     empty = [i + 1 for i, post in enumerate(posts) if not post.strip()]
     if empty:
         raise ContentValidationError(f"Threads posts are empty: {empty}")
+    cyrillic = [i + 1 for i, post in enumerate(posts) if CYRILLIC.search(post)]
+    if cyrillic:
+        raise ContentValidationError(f"Threads posts contain Cyrillic text: {cyrillic}")
