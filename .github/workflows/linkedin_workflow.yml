@@ -1,0 +1,64 @@
+name: Clarity Lab — LinkedIn
+
+on:
+  schedule:
+    # Tuesday and Thursday, 13:00 UTC (09:00 New York) — before the working day fills up
+    - cron: '0 13 * * 2,4'
+  workflow_dispatch:
+    inputs:
+      publish_due:
+        description: 'Publish drafts already marked approved instead of writing a new one'
+        required: false
+        default: 'false'
+      enable_publishing:
+        description: 'Publish immediately (true/false). Overrides the default for this run only.'
+        required: false
+        default: 'false'
+
+jobs:
+  linkedin:
+    name: Generate and store a LinkedIn draft
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_TOKEN_WRITER }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run LinkedIn workflow
+        env:
+          OPENAI_API_KEY:            ${{ secrets.OPENAI_API_KEY }}
+          LINKEDIN_ACCESS_TOKEN:     ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_PERSON_URN:       ${{ secrets.LINKEDIN_PERSON_URN }}
+          LINKEDIN_CLIENT_ID:        ${{ secrets.LINKEDIN_CLIENT_ID }}
+          LINKEDIN_CLIENT_SECRET:    ${{ secrets.LINKEDIN_CLIENT_SECRET }}
+          GMAIL_SENDER:              ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD:        ${{ secrets.GMAIL_APP_PASSWORD }}
+          REPORT_EMAIL_TO:           ${{ secrets.REPORT_EMAIL_TO }}
+          # Safe by default. Flip these to true once the voice is right.
+          ENABLE_LINKEDIN_PUBLISHING: ${{ github.event.inputs.enable_publishing || 'false' }}
+          LINKEDIN_REQUIRE_APPROVAL:  'true'
+          DRY_RUN: 'false'
+        run: |
+          if [ "${{ github.event.inputs.publish_due }}" = "true" ]; then
+            python linkedin.py --publish-due
+          else
+            python linkedin.py
+          fi
+
+      - name: Commit drafts
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/linkedin_posts.csv
+          git diff --staged --quiet || git commit -m "LinkedIn: store generated draft"
+          git push

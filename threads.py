@@ -17,7 +17,7 @@ from openai import OpenAI
 from content_validation import ContentValidationError, parse_thread_series as parse_series_sections, validate_threads_posts
 from http_utils import HttpClient
 from meta_tokens import validate_threads_token
-from prompt_loader import THREADS_PROMPT_PATH, load_prompt
+from prompt_loader import THREADS_PROMPT_PATH, load_prompt, load_prompt_with_scenes
 from runtime_config import FeatureFlags, ThreadsConfig
 from structured_logging import get_logger, log_event
 from threads_store import append_post, draft_record, find_duplicate, published_thread_count_on, update_post
@@ -97,7 +97,7 @@ def generate_threads_content(topic_row, content_type):
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY is required to generate Threads content")
     client = OpenAI(api_key=OPENAI_API_KEY, max_retries=FLAGS.http_max_retries, timeout=FLAGS.http_timeout_seconds)
-    base_prompt = load_prompt(THREADS_PROMPT_PATH)
+    base_prompt = load_prompt_with_scenes(THREADS_PROMPT_PATH)
     prompt = f"""
 {base_prompt}
 
@@ -115,7 +115,7 @@ Hard character limit: 300 characters total. The post must be complete and self-c
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=120,
+        max_tokens=150,
         temperature=0.8,
     )
 

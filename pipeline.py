@@ -26,8 +26,13 @@ from runtime_config import FacebookConfig, FeatureFlags, InstagramConfig
 from structured_logging import get_logger, log_event
 from prompt_loader import (
     load_prompt,
+    load_prompt_with_scenes,
+    load_hashtags,
     load_visual_journey,
     load_accent_states,
+    load_subject_families,
+    load_compositions,
+    load_light_states,
     IMAGE_PROMPT_PATH,
     INSTAGRAM_PROMPT_PATH,
     FACEBOOK_PROMPT_PATH,
@@ -66,8 +71,16 @@ FACEBOOK_CONFIG = FacebookConfig.from_env()
 # where published_count = number of rows in topics.csv with Status == "Published"
 # ============================================================
 
-VISUAL_JOURNEY = load_visual_journey()
-ACCENT_STATES  = load_accent_states()
+VISUAL_JOURNEY   = load_visual_journey()
+ACCENT_STATES    = load_accent_states()
+SUBJECT_FAMILIES = load_subject_families()
+COMPOSITIONS     = load_compositions()
+LIGHT_STATES     = load_light_states()
+
+
+def _cycle(items, index, fallback):
+    """Item by index, wrapping. Never raises on an empty list."""
+    return items[index % len(items)] if items else fallback
 
 def get_visual_state(index):
     return VISUAL_JOURNEY[index % len(VISUAL_JOURNEY)]
@@ -185,11 +198,42 @@ def parse_content(raw_text):
     print(f"[PARSE] Title: {sections['title']}")
     return sections
 
+def _recent_scene_ids(rows, limit: int = 40) -> str:
+    """Scene codes used in recent publications, so the model does not repeat one."""
+    ids = [r.get("Scene ID", "").strip() for r in rows if r.get("Scene ID", "").strip()]
+    return ", ".join(ids[-limit:]) if ids else "none yet"
+
+
+def generate_channel_text(prompt_path, topic_row, website_url, recent_scenes, max_tokens=400):
+    """Channel-specific text written from that channel's own prompt file."""
+    client = OpenAI(api_key=OPENAI_API_KEY,
+                    max_retries=FLAGS.http_max_retries,
+                    timeout=FLAGS.http_timeout_seconds)
+
+    filled = load_prompt_with_scenes(prompt_path).format(
+        title=topic_row.get("Topic / Working Title", ""),
+        core_observation=topic_row.get("Core Observation", ""),
+        audience_question=topic_row.get("Audience Question", ""),
+        content_pillar=topic_row.get("Content Pillar", ""),
+        website_url=website_url or "",
+    )
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content":
+                   f"{filled}\n\nScenes already used recently \u2014 do not reuse: {recent_scenes}"}],
+        max_tokens=max_tokens,
+        temperature=0.8,
+    )
+    return response.choices[0].message.content.strip()
+
+
 # ============================================================
 # STEP 3: Generate image via gpt-image-1
 # ============================================================
 
-def generate_image(title, core_observation, visual_state, accent_state):
+def generate_image(title, core_observation, visual_state, accent_state,
+                   subject_state, composition_state, light_state):
     client = OpenAI(api_key=OPENAI_API_KEY)
 
     base_image_prompt = load_prompt(IMAGE_PROMPT_PATH)
@@ -200,6 +244,9 @@ def generate_image(title, core_observation, visual_state, accent_state):
         visual_state_mood=visual_state["mood"],
         visual_state_palette=visual_state["palette"],
         accent_state=accent_state,
+        subject_state=subject_state,
+        composition_state=composition_state,
+        light_state=light_state,
     )
 
     print(f"[GPT-IMAGE] Generating image (visual: {visual_state['name']})...")
@@ -525,16 +572,27 @@ def run_pipeline():
     index, rows, topic, visual_index = get_next_topic()
     state = PublicationState(topic_id=topic.get("ID", ""))
 
-    visual_state = get_visual_state(visual_index)
-    accent_state = get_accent_state(visual_index)
-    print(f"[VISUAL] {visual_state['name']} / {accent_state}")
+    visual_state      = get_visual_state(visual_index)
+    accent_state      = get_accent_state(visual_index)
+    subject_state     = _cycle(SUBJECT_FAMILIES, visual_index,
+                               "an ordinary surface, closely observed")
+    composition_state = _cycle(COMPOSITIONS, visual_index,
+                               "one object off centre, most of the frame empty")
+    light_state       = _cycle(LIGHT_STATES, visual_index,
+                               "one window, bright near it, falling off into shadow")
+    print(f"[VISUAL] {visual_state['name']} | subject {visual_index % max(len(SUBJECT_FAMILIES), 1)}"
+          f" | comp {visual_index % max(len(COMPOSITIONS), 1)}"
+          f" | light {visual_index % max(len(LIGHT_STATES), 1)}")
 
     content = generate_content(topic)
     title   = content["title"]
     ig_text = content["instagram"]
     website = content["website"]
 
-    raw_image_path = generate_image(title, topic["Core Observation"], visual_state, accent_state)
+    raw_image_path = generate_image(
+        title, topic["Core Observation"], visual_state, accent_state,
+        subject_state, composition_state, light_state,
+    )
     branded_image_path = overlay_logo(raw_image_path)
 
     cloudinary_url = upload_to_cloudinary(branded_image_path, title)
@@ -550,10 +608,23 @@ def run_pipeline():
     else:
         state.set_platform("wix", False, "skipped")
 
-    hashtags = "#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI"
-    ig_caption = f"{ig_text}\n\n{hashtags}"
-    fb_text    = ig_text[:500] if len(ig_text) > 500 else ig_text
-    fb_message = f"{fb_text}\n\n{post_url}"
+    recent_scenes = _recent_scene_ids(rows)
+
+    try:
+        ig_text = generate_channel_text(INSTAGRAM_PROMPT_PATH, topic, post_url, recent_scenes)
+    except Exception as exc:
+        log_event(LOGGER, "instagram_text_fallback", logging.WARNING,
+                  platform="openai", status="fallback", error=str(exc))
+
+    try:
+        fb_message = generate_channel_text(FACEBOOK_PROMPT_PATH, topic, post_url, recent_scenes)
+    except Exception as exc:
+        log_event(LOGGER, "facebook_text_fallback", logging.WARNING,
+                  platform="openai", status="fallback", error=str(exc))
+        fb_message = f"{ig_text}\n\n{post_url}"
+
+    hashtags   = load_hashtags()
+    ig_caption = f"{ig_text}\n\n{hashtags}".strip()
 
     # Save captions at generation time — before any publish attempt.
     if not FLAGS.dry_run:

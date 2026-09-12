@@ -39,11 +39,40 @@ REPORTS_DIR      = Path("data/reports")
 STRATEGY_DIR     = Path("data/strategy")
 TODAY            = date.today()
 
+# A theme is only a theme when there is enough text behind it. Below these
+# thresholds the analyser reports no themes at all rather than reporting noise.
+MIN_COMMENTS_FOR_THEMES = 5   # fewer comments than this -> no theme extraction
+MIN_WORD_OCCURRENCES    = 3   # a word must appear at least this many times
+MIN_DISTINCT_SOURCES    = 2   # ...across at least this many separate comments
+
 STOPWORDS = {
-    "the", "a", "an", "is", "it", "in", "of", "to", "and", "that", "this",
-    "for", "i", "you", "we", "are", "was", "be", "have", "not", "with", "as",
-    "at", "by", "from", "or", "but", "they", "their", "its", "which", "more",
-    "clarity", "about", "into", "some", "been", "when", "who", "what",
+    # articles, pronouns, auxiliaries
+    "the", "a", "an", "is", "it", "its", "in", "of", "to", "and", "that", "this",
+    "these", "those", "for", "i", "you", "we", "us", "they", "them", "their",
+    "he", "she", "his", "her", "our", "your", "my", "me", "am", "are", "was",
+    "were", "be", "been", "being", "have", "has", "had", "do", "does", "did",
+    "will", "would", "shall", "should", "can", "could", "may", "might", "must",
+    "not", "with", "as", "at", "by", "from", "or", "but", "if", "then", "than",
+    "so", "because", "while", "when", "where", "who", "whom", "what", "which",
+    "how", "why", "there", "here", "into", "onto", "over", "under", "about",
+    "after", "before", "again", "also", "just", "only", "very", "more", "most",
+    "some", "any", "all", "both", "each", "other", "such", "same", "too", "own",
+    "out", "off", "up", "down", "now", "ever", "never", "always", "often",
+    # contraction fragments that survive punctuation stripping
+    "it's", "that's", "there's", "isn't", "aren't", "don't", "doesn't", "didn't",
+    "can't", "won't", "wouldn't", "shouldn't", "couldn't", "i'm", "i've", "we're",
+    "you're", "they're", "we've", "you've", "haven't", "hasn't", "let's", "what's",
+    # verbs and nouns too generic to mean anything as a "theme"
+    "make", "makes", "made", "want", "wants", "need", "needs", "know", "knows",
+    "think", "thinks", "feel", "feels", "like", "likes", "get", "gets", "going",
+    "come", "comes", "take", "takes", "give", "gives", "look", "looks", "seem",
+    "seems", "thing", "things", "something", "anything", "nothing", "everything",
+    "people", "person", "time", "times", "way", "ways", "really", "actually",
+    "much", "many", "lot", "even", "still", "yet", "well", "good", "great",
+    # words the brand uses in every single text, so they carry no signal
+    "clarity", "clear", "reflection", "reflect", "thinking", "thought",
+    "internal", "inner", "self", "understand", "understanding", "pattern",
+    "patterns", "experience", "reduces", "reduce",
 }
 
 
@@ -55,13 +84,37 @@ def _read_csv(path: Path) -> list[dict]:
 
 
 def _top_words(texts: list[str], n: int = 8) -> list[str]:
-    words: Counter = Counter()
-    for text in texts:
-        for word in text.lower().split():
-            word = word.strip(".,!?;:\"'()-")
-            if len(word) > 3 and word not in STOPWORDS:
-                words[word] += 1
-    return [w for w, _ in words.most_common(n)]
+    """Recurring words that clear the evidence thresholds.
+
+    Returns an empty list when there is not enough text. A word counted twice
+    inside a single comment is not a theme, so distinct sources are tracked
+    separately from raw frequency.
+    """
+    if len(texts) < MIN_COMMENTS_FOR_THEMES:
+        return []
+
+    counts: Counter = Counter()
+    sources: dict[str, set[int]] = {}
+
+    for idx, text in enumerate(texts):
+        for raw in text.lower().split():
+            word = raw.strip(".,!?;:\"'()-—–…«»[]{}")
+            # normalise possessives so "decision's" and "decision" are one word
+            if word.endswith("'s") or word.endswith("\u2019s"):
+                word = word[:-2]
+            if len(word) <= 3 or word in STOPWORDS:
+                continue
+            if not any(ch.isalpha() for ch in word):
+                continue
+            counts[word] += 1
+            sources.setdefault(word, set()).add(idx)
+
+    qualified = [
+        (w, c) for w, c in counts.items()
+        if c >= MIN_WORD_OCCURRENCES and len(sources.get(w, ())) >= MIN_DISTINCT_SOURCES
+    ]
+    qualified.sort(key=lambda pair: (-pair[1], pair[0]))
+    return [w for w, _ in qualified[:n]]
 
 
 def _load_prompt_evolution() -> list[dict]:
@@ -120,7 +173,11 @@ def analyze() -> dict:
     wix_published = [t for t in published if t.get("Wix Status", "").lower() == "published"]
     ig_published  = [t for t in published if t.get("Instagram Status", "").lower() == "published"]
     fb_published  = [t for t in published if t.get("Facebook Status", "").lower() == "published"]
-    th_published  = [t for t in published if t.get("Threads Status", "").lower() == "published"]
+    # Threads publication state lives in data/threads_posts.csv, not in topics.csv —
+    # threads.py never writes the "Threads Status" column. Reading topics.csv here
+    # reported 0 while 111 posts were actually published.
+    th_published  = [pst for pst in posts if pst.get("status", "").lower() == "published"]
+    th_from_topics = [t for t in published if t.get("Threads Status", "").lower() == "published"]
 
     # --- Prompt evolution ---
     recent_prompt_recs = [
@@ -162,6 +219,31 @@ def analyze() -> dict:
     best_post_ids = [pid for pid, _ in post_comment_counts.most_common(3)]
     best_posts = [p for p in posts if p.get("post_id") in best_post_ids]
 
+    # --- How much can be concluded from this cycle at all? ---
+    # "usable" is deliberately hard to reach. Everything downstream reads this
+    # flag, so that a strategy is never rewritten on the strength of noise.
+    if len(comments) >= MIN_COMMENTS_FOR_THEMES and comment_themes:
+        evidence_level = "usable"
+    elif len(comments) > 0 or posts:
+        evidence_level = "weak"
+    else:
+        evidence_level = "none"
+
+    if evidence_level == "usable":
+        evidence_note = (
+            f"{len(comments)} comments across {posts_with_comments} posts produced "
+            f"{len(comment_themes)} recurring themes above threshold."
+        )
+        continue_recs = comment_themes[:3]
+    else:
+        evidence_note = (
+            f"Not enough audience response to draw conclusions: {len(comments)} comment(s), "
+            f"{posts_with_comments} post(s) with any reply, no engagement metrics collected. "
+            "Themes and 'what to continue' are intentionally left empty — reporting "
+            "frequent words from this little text would be noise presented as a finding."
+        )
+        continue_recs = []
+
     return {
         "analysis_date": TODAY.isoformat(),
         "generated_at": datetime.now(tz=timezone.utc).isoformat(),
@@ -186,6 +268,8 @@ def analyze() -> dict:
                 "facebook": len(fb_published),
                 "threads": len(th_published),
             },
+            "threads_status_column_count": len(th_from_topics),
+            "evidence_level": evidence_level,
         },
         "interpretation": {
             "what_strategy_was_tested": (
@@ -193,9 +277,13 @@ def analyze() -> dict:
                 if top_pillars else "Strategy pillars not determinable from available data."
             ),
             "strongest_signal_channel": (
-                "Threads" if len(comments) > 0 else "No channel engagement data available."
+                f"Threads ({len(comments)} comments)"
+                if len(comments) >= MIN_COMMENTS_FOR_THEMES
+                else "None — no channel produced enough response to be called strongest."
             ),
-            "comment_topics_worth_continuing": comment_themes[:3],
+            "evidence_level": evidence_level,
+            "evidence_note": evidence_note,
+            "comment_topics_worth_continuing": continue_recs,
             "best_performing_posts": [
                 p.get("text_preview", p.get("topic_id", ""))[:80] for p in best_posts
             ],
@@ -203,7 +291,7 @@ def analyze() -> dict:
             "recent_prompt_evolution": recent_prompt_recs,
         },
         "recommendations": {
-            "continue": comment_themes[:3] if comment_themes else [],
+            "continue": continue_recs,
             "stop_or_test_differently": failed_titles[:3] if failed_titles else [],
             "missing_data_to_resolve": [
                 n for n in data_quality_notes if n.startswith(("NO DATA", "WEAK SIGNAL"))
@@ -282,6 +370,10 @@ def to_markdown(diagnosis: dict) -> str:
         f"**Strategy tested:** {interp['what_strategy_was_tested']}",
         f"**Strongest signal channel:** {interp['strongest_signal_channel']}",
         "",
+        f"**Evidence level:** {interp.get('evidence_level', 'unknown').upper()}",
+        "",
+        f"> {interp.get('evidence_note', '')}",
+        "",
     ]
     if interp["best_performing_posts"]:
         lines.append("**Best-performing post excerpts (by comment count):**")
@@ -300,7 +392,9 @@ def to_markdown(diagnosis: dict) -> str:
         "",
         "## Recommendations",
         "",
-        "**Continue:**",
+        ("**Continue:**" if recs["continue"]
+         else "**Continue:** nothing — this cycle produced too little audience response "
+              "to justify a recommendation. See Evidence level above."),
     ]
     for r in recs["continue"] or ["Insufficient data to recommend."]:
         lines.append(f"- {r}")
