@@ -2,10 +2,9 @@
 
 Every line starting with `#` is picked up. Everything else is a comment and ignored.
 
-Previously these were hardcoded in `pipeline.py` as:
-`#clarity #reflection #selfawareness #InnerOS #mindfulness #humandesign #AI`
+Hashtags should support discovery without defining the brand through another system or methodology.
 
-Two of them were pulling the wrong audience. `#humandesign` contradicts the decision to keep the mechanic off the storefront, and `#mindfulness` brings in readers who never convert at this price point.
+Keep the set small and relevant to the actual Clarity Lab audience.
 
 ## Active
 
@@ -14,12 +13,13 @@ Two of them were pulling the wrong audience. `#humandesign` contradicts the deci
 #thinkingpatterns
 #decisionmaking
 #innerwork
-#reflectivepractice
-#InnerOS
+#lifetransitions
+#selfreflection
 #ClarityLab
 
 ## Retired — do not restore without a reason
 
-`#humandesign` — off the storefront by decision
-`#mindfulness` — wrong audience, does not convert
-`#AI` — too broad, brings tool-watchers rather than readers
+`#humandesign` — Clarity Lab does not use Human Design as public positioning
+`#mindfulness` — points toward a different content category and audience
+`#AI` — too broad; attracts interest in AI tools rather than the human questions Clarity Lab addresses
+`#InnerOS` — previous brand/product language; Clarity Lab is the public identity
