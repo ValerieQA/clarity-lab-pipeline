@@ -31,7 +31,10 @@ def _article(**overrides):
 def test_every_channel_prompt_treats_topic_as_brief(path):
     text = Path(path).read_text(encoding="utf-8")
     assert "## Topic brief" in text
-    assert "write in English from that meaning" in text
+    # Each prompt words this its own way ("write the post in English…"), so the
+    # test pins the two things that must survive any rewrite.
+    assert "in English from that meaning" in text
+    assert "It may arrive in Russian" in text
 
 
 def test_english_article_passes():
