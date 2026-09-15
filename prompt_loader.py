@@ -15,6 +15,12 @@ LINKEDIN_PROMPT_PATH  = Path("config/LINKEDIN_PROMPT.md")
 SCENE_BANK_PATH       = Path("config/SCENE_BANK.md")
 HASHTAGS_PATH         = Path("config/HASHTAGS.md")
 
+# An entry either sits on one line ("0 | muted terracotta") or opens a block of
+# its own ("## 0 | Lived-in interior" followed by prose). Both shapes are in
+# IMAGE_PROMPT.md, so every rotation list is read through the same helpers.
+_HEADING = re.compile(r"^(#+)\s*(.*)$")
+_ENTRY = re.compile(r"^(?:#+\s*)?(\d+)\s*\|\s*(.+)$")
+
 
 def load_prompt(path: str | Path) -> str:
     prompt_path = Path(path)
@@ -26,100 +32,114 @@ def load_prompt(path: str | Path) -> str:
     return content
 
 
+def _section_lines(content: str, section: str) -> list[str]:
+    """Lines under '# <section>' (any heading depth), up to the next section.
+
+    A deeper heading stays inside the section, so entries written as their own
+    sub-headings are kept.
+    """
+    lines: list[str] = []
+    depth = None
+
+    for raw in content.splitlines():
+        match = _HEADING.match(raw.strip())
+
+        if depth is None:
+            if match and match.group(2).strip().lower() == section.lower():
+                depth = len(match.group(1))
+            continue
+
+        if match and len(match.group(1)) <= depth:
+            break
+
+        lines.append(raw)
+
+    return lines
+
+
+def _entry_blocks(content: str, section: str) -> list[tuple[int, str, list[str]]]:
+    """(index, label, body lines) for every entry of a section, in file order."""
+    blocks: list[tuple[int, str, list[str]]] = []
+
+    for raw in _section_lines(content, section):
+        stripped = raw.strip()
+        match = _ENTRY.match(stripped)
+        if match:
+            blocks.append((int(match.group(1)), match.group(2).strip(), []))
+        elif blocks and stripped:
+            blocks[-1][2].append(stripped)
+
+    return blocks
+
+
+def _first_paragraph(body: list[str]) -> str:
+    """The first prose line of an entry body, ignoring bullets and labels."""
+    for line in body:
+        if line.startswith(("*", "-", "|", ">")) or line.endswith(":"):
+            continue
+        return line
+    return ""
+
+
 def load_visual_journey() -> list[dict]:
     """Parse the Visual Journey section from IMAGE_PROMPT.md.
 
-    Each line has the format:
+    An entry is either one line:
         <index> | <name> | mood: <mood> | palette: <palette>
+    or a block:
+        <index> | <name>
+        mood: <mood>
+        palette: <palette>
 
     Returns a list of dicts with keys: index, name, mood, palette.
     """
     content = load_prompt(IMAGE_PROMPT_PATH)
-
-    in_section = False
     entries = []
 
-    for line in content.splitlines():
-        stripped = line.strip()
+    for index, label, body in _entry_blocks(content, "Visual Journey"):
+        parts = [part.strip() for part in label.split("|")]
+        name = parts[0]
+        fields = {"mood": "", "palette": ""}
 
-        if stripped == "## Visual Journey":
-            in_section = True
-            continue
+        for candidate in parts[1:] + body:
+            for key in fields:
+                prefix = f"{key}:"
+                if candidate.lower().startswith(prefix) and not fields[key]:
+                    fields[key] = candidate[len(prefix):].strip()
 
-        if in_section:
-            # Stop at the next ## section heading
-            if stripped.startswith("##"):
-                break
+        entries.append({
+            "index": index,
+            "name": name,
+            "mood": fields["mood"],
+            "palette": fields["palette"],
+        })
 
-            if not stripped or "|" not in stripped:
-                continue
-
-            parts = [p.strip() for p in stripped.split("|")]
-            if len(parts) < 4:
-                continue
-
-            try:
-                index = int(parts[0])
-            except ValueError:
-                continue
-
-            name = parts[1]
-            mood_raw = parts[2]
-            palette_raw = parts[3]
-
-            mood = re.sub(r"^mood:\s*", "", mood_raw, flags=re.IGNORECASE)
-            palette = re.sub(r"^palette:\s*", "", palette_raw, flags=re.IGNORECASE)
-
-            entries.append({
-                "index": index,
-                "name": name,
-                "mood": mood,
-                "palette": palette,
-            })
-
+    entries.sort(key=lambda entry: entry["index"])
     return entries
 
 
-def load_accent_states() -> list[str]:
-    """Parse the Accent States section from IMAGE_PROMPT.md.
+def load_indexed_section(section: str, path: str | Path = IMAGE_PROMPT_PATH) -> list[str]:
+    """Texts of every '<index> | <text>' entry in a section, ordered by index.
 
-    Each line has the format:
-        <index> | <accent description>
-
-    Returns a list of accent description strings ordered by index.
+    When the entry is a sub-heading with prose under it, the first prose line
+    is appended to the heading so the image prompt still receives a
+    description rather than a bare label.
     """
-    content = load_prompt(IMAGE_PROMPT_PATH)
+    content = load_prompt(path)
+    entries: list[tuple[int, str]] = []
 
-    in_section = False
-    entries = []
+    for index, label, body in _entry_blocks(content, section):
+        detail = _first_paragraph(body)
+        text = f"{label} — {detail}" if detail else label
+        entries.append((index, text))
 
-    for line in content.splitlines():
-        stripped = line.strip()
+    entries.sort(key=lambda pair: pair[0])
+    return [text for _, text in entries]
 
-        if stripped == "## Accent States":
-            in_section = True
-            continue
 
-        if in_section:
-            if stripped.startswith("##"):
-                break
-
-            if not stripped or "|" not in stripped:
-                continue
-
-            parts = [p.strip() for p in stripped.split("|", 1)]
-            if len(parts) < 2:
-                continue
-
-            try:
-                index = int(parts[0])
-            except ValueError:
-                continue
-
-            entries.append((index, parts[1]))
-
-    entries.sort(key=lambda x: x[0])
-    return [desc for _, desc in entries]
+def load_accent_states() -> list[str]:
+    """Accent descriptions from the Accent States section, ordered by index."""
+    return load_indexed_section("Accent States")
 
 
 def load_prompt_with_scenes(path: str | Path) -> str:
@@ -151,41 +171,6 @@ def load_hashtags() -> str:
         if line.strip().startswith("#") and " " not in line.strip()
     ]
     return " ".join(tags)
-
-
-def load_indexed_section(section: str, path: str | Path = IMAGE_PROMPT_PATH) -> list[str]:
-    """Lines of the form '<index> | <text>' under a '## <section>' heading.
-
-    Returns the texts ordered by index. Everything after the first '|' is
-    treated as content, so pipes inside the text are allowed.
-    """
-    content = load_prompt(path)
-    heading = f"## {section}"
-    in_section = False
-    entries: list[tuple[int, str]] = []
-
-    for line in content.splitlines():
-        stripped = line.strip()
-
-        if stripped == heading:
-            in_section = True
-            continue
-
-        if in_section:
-            if stripped.startswith("##"):
-                break
-            if not stripped or "|" not in stripped:
-                continue
-
-            index_part, _, rest = stripped.partition("|")
-            try:
-                index = int(index_part.strip())
-            except ValueError:
-                continue
-            entries.append((index, rest.strip()))
-
-    entries.sort(key=lambda pair: pair[0])
-    return [text for _, text in entries]
 
 
 def load_subject_families() -> list[str]:

@@ -335,6 +335,18 @@ No hashtags.
 
 No URL unless the topic brief explicitly requires a product or link post.
 
+One exception, and only this one. When the input says `Content type: thread_series`, return two to four posts, each opened by its own marker on its own line:
+
+```
+===POST1===
+first post
+
+===POST2===
+second post
+```
+
+Every post still obeys every rule above, including the character limit. Use the markers only for `thread_series`; `spark` and `question` return the post text alone.
+
 ---
 
 ## Check before returning

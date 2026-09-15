@@ -161,5 +161,7 @@ def test_banned_openings_rule_is_about_the_plural(path):
     ban on 'Someone' — the exact opening the Scene Rule asks for.
     """
     text = load_prompt(path)
-    assert "The rule is about the plural" in text, f"{path} still bans the bare token"
+    assert "plural" in text, f"{path} does not state that the rule is about the plural"
     assert "Someone" in text, f"{path} does not show that 'Someone' is a correct opening"
+    bare_token = re.search(r"^[*\-]?\s*[\"'*]?Some[\"'*]?\s*$", text, re.MULTILINE)
+    assert bare_token is None, f"{path} bans the bare token 'Some', which also bans 'Someone'"

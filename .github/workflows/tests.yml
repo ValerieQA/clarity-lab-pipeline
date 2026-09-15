@@ -30,4 +30,4 @@ jobs:
           IG_TOKEN:              test
           FB_PAGE_ID:            "456"
           FB_PAGE_TOKEN:         test
-        run: pytest tests/ -v
+        run: python -m pytest tests/ -v
