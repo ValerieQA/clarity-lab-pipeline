@@ -99,7 +99,13 @@ def load_rotation_contract(path: str | Path = ROTATION_CONTRACT_PATH) -> dict[st
         raise MissingRotationContract(f"Rotation contract not found: {contract_path}")
 
     with contract_path.open("rb") as handle:
-        data = tomllib.load(handle)
+        try:
+            data = tomllib.load(handle)
+        except tomllib.TOMLDecodeError as exc:
+            raise MissingRotationContract(
+                f"{contract_path} is not valid TOML: {exc}. "
+                f"Each line reads like '\"Light\" = 5' under a [counts] heading."
+            ) from exc
 
     counts = data.get("counts")
     if not isinstance(counts, dict) or not counts:

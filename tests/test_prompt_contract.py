@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import check_prompts  # noqa: E402
 from check_prompts import (  # noqa: E402
     check_markers,
     check_placeholders,
@@ -72,6 +73,22 @@ def test_contract_rejects_a_nonsense_count(tmp_path):
     broken.write_text('[counts]\n"Light" = 0\n', encoding="utf-8")
     with pytest.raises(MissingRotationContract):
         load_rotation_contract(broken)
+
+
+def test_malformed_contract_reads_as_a_prompt_problem(tmp_path, monkeypatch):
+    """A typo in the TOML must arrive as an actionable line, not a traceback."""
+    broken = tmp_path / "rotation.toml"
+    broken.write_text('[counts]\n"Light" 5\n', encoding="utf-8")
+
+    with pytest.raises(MissingRotationContract, match="not valid TOML"):
+        load_rotation_contract(broken)
+
+    monkeypatch.setattr(check_prompts, "load_rotation_contract", lambda: load_rotation_contract(broken))
+    problems = check_rotations()
+
+    assert len(problems) == 1
+    assert "not valid TOML" in problems[0]
+    assert "Traceback" not in problems[0]
 
 
 def test_checker_is_the_one_the_workflows_run():
