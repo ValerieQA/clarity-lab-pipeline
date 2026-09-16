@@ -1,0 +1,20 @@
+# Machine-readable contract for the rotation lists in IMAGE_PROMPT.md.
+#
+# The prompt file is prose written for the model. This file is the part the
+# code reads: for every rotation section, the heading it lives under and the
+# number of entries it must contain.
+#
+# When a list gains or loses an entry, change `count` here in the same edit.
+# A mismatch, a section missing from this file, or a section named here that
+# no longer exists in the prompt all fail `python scripts/check_prompts.py`,
+# and the publishing workflows run that before they publish anything.
+#
+# The counts should stay pairwise coprime where possible — that is what stops
+# image combinations repeating early. 13, 9, 7 and 5 share no factors.
+
+[counts]
+"Visual Journey" = 13
+"Subject Families" = 9
+"Composition" = 7
+"Light" = 5
+"Accent States" = 6

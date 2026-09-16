@@ -22,7 +22,12 @@ from check_prompts import (  # noqa: E402
     check_rules,
     run_checks,
 )
-from prompt_loader import declared_length, load_prompt  # noqa: E402
+from prompt_loader import (  # noqa: E402
+    MissingRotationContract,
+    declared_length,
+    load_prompt,
+    load_rotation_contract,
+)
 
 
 def test_prompts_and_code_agree():
@@ -35,32 +40,38 @@ def test_each_check_passes_on_its_own(check):
     assert check() == []
 
 
-@pytest.mark.parametrize(
-    "section,expected",
-    [("Visual Journey", 13), ("Subject Families", 9), ("Composition", 7),
-     ("Light", 5), ("Accent States", 6)],
-)
-def test_sections_state_their_own_length(section, expected):
-    """The prose carries the count, which is what the checker compares against.
+def test_contract_covers_exactly_the_rotations_the_code_reads():
+    """A section the code reads but the contract omits would go unchecked."""
+    from check_prompts import ROTATIONS
 
-    These numbers may change with the strategy. When one does, the section's
-    own sentence changes with it and this test is the reminder.
+    assert set(load_rotation_contract()) == set(ROTATIONS)
+
+
+@pytest.mark.parametrize("section", sorted(load_rotation_contract()))
+def test_every_rotation_has_a_declared_count(section):
+    assert declared_length(section) >= 1
+
+
+def test_declared_length_refuses_to_guess():
+    """An undeclared section must raise, never return None.
+
+    None would read as "nothing to compare against" and quietly switch off the
+    one check that catches a list changing size.
     """
-    assert declared_length(section) == expected
+    with pytest.raises(MissingRotationContract):
+        declared_length("Weather")
 
 
-def test_declared_length_reads_both_wordings(tmp_path):
-    sample = tmp_path / "sample.md"
-    sample.write_text(
-        "# Alpha\n\nAdvance one step per published article and wrap after 4.\n\n"
-        "0 | a\n1 | b\n2 | c\n3 | d\n\n"
-        "# Beta\n\nThe palette changes gradually across three states.\n\n"
-        "0 | x\n1 | y\n2 | z\n",
-        encoding="utf-8",
-    )
-    assert declared_length("Alpha", sample) == 4
-    assert declared_length("Beta", sample) == 3
-    assert declared_length("Gamma", sample) is None
+def test_missing_contract_file_is_an_error(tmp_path):
+    with pytest.raises(MissingRotationContract):
+        load_rotation_contract(tmp_path / "absent.toml")
+
+
+def test_contract_rejects_a_nonsense_count(tmp_path):
+    broken = tmp_path / "rotation.toml"
+    broken.write_text('[counts]\n"Light" = 0\n', encoding="utf-8")
+    with pytest.raises(MissingRotationContract):
+        load_rotation_contract(broken)
 
 
 def test_checker_is_the_one_the_workflows_run():
