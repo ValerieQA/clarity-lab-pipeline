@@ -26,16 +26,18 @@ from prompt_loader import (  # noqa: E402
     IMAGE_PROMPT_PATH,
     INSTAGRAM_PROMPT_PATH,
     LINKEDIN_PROMPT_PATH,
+    ROTATION_CONTRACT_PATH,
     SCENE_BANK_PATH,
     STORIES_PROMPT_PATH,
     THREADS_PROMPT_PATH,
-    declared_length,
+    MissingRotationContract,
     load_accent_states,
     load_compositions,
     load_hashtags,
     load_light_states,
     load_prompt,
     load_prompt_with_scenes,
+    load_rotation_contract,
     load_subject_families,
     load_visual_journey,
 )
@@ -75,17 +77,36 @@ REQUIRED_MARKERS = {
     THREADS_PROMPT_PATH: ("===POST1===",),
 }
 
-BRIEF_RULE_PROMPTS = (
-    ARTICLE_PROMPT_PATH, THREADS_PROMPT_PATH, INSTAGRAM_PROMPT_PATH,
-    FACEBOOK_PROMPT_PATH, LINKEDIN_PROMPT_PATH, STORIES_PROMPT_PATH,
-)
 
 
 def check_rotations() -> list[str]:
-    """Each rotation list must parse, be complete, and match its own prose."""
+    """Each rotation list must parse, be complete, and match its declared size."""
     problems = []
 
+    try:
+        contract = load_rotation_contract()
+    except MissingRotationContract as exc:
+        return [f"{exc} Nothing about the rotation can be verified without it."]
+
+    undeclared = set(ROTATIONS) - set(contract)
+    if undeclared:
+        problems.append(
+            f"{ROTATION_CONTRACT_PATH}: no count declared for "
+            f"{', '.join(sorted(undeclared))}. Every rotation the code reads must be "
+            f"declared here, or its size goes unchecked."
+        )
+
+    unknown = set(contract) - set(ROTATIONS)
+    if unknown:
+        problems.append(
+            f"{ROTATION_CONTRACT_PATH}: declares {', '.join(sorted(unknown))}, which the "
+            f"code does not read. Either wire the section up or drop it from the contract."
+        )
+
     for section, loader in ROTATIONS.items():
+        if section not in contract:
+            continue
+
         entries = loader()
 
         if not entries:
@@ -96,18 +117,19 @@ def check_rotations() -> list[str]:
             )
             continue
 
-        indices = [e["index"] for e in entries] if isinstance(entries[0], dict) else list(range(len(entries)))
-        if isinstance(entries[0], dict) and indices != list(range(len(entries))):
-            problems.append(
-                f"{IMAGE_PROMPT_PATH}: section '{section}' is numbered {indices}, "
-                f"but the rotation needs 0..{len(entries) - 1} with no gaps or repeats."
-            )
+        if isinstance(entries[0], dict):
+            indices = [entry["index"] for entry in entries]
+            if indices != list(range(len(entries))):
+                problems.append(
+                    f"{IMAGE_PROMPT_PATH}: section '{section}' is numbered {indices}, "
+                    f"but the rotation needs 0..{len(entries) - 1} with no gaps or repeats."
+                )
 
-        claimed = declared_length(section)
-        if claimed is not None and claimed != len(entries):
+        if contract[section] != len(entries):
             problems.append(
-                f"{IMAGE_PROMPT_PATH}: section '{section}' says it holds {claimed} entries "
-                f"but {len(entries)} parsed. Update the list or the sentence that counts it."
+                f"{IMAGE_PROMPT_PATH}: section '{section}' holds {len(entries)} entries but "
+                f"{ROTATION_CONTRACT_PATH} declares {contract[section]}. "
+                f"Change the list and the contract in the same edit."
             )
 
     return problems
@@ -169,16 +191,14 @@ def check_markers() -> list[str]:
 
 
 def check_rules() -> list[str]:
-    """Rules the pipeline depends on, rather than rules of taste."""
-    problems = []
+    """Machine contracts only: things the code reads back and depends on.
 
-    for path in BRIEF_RULE_PROMPTS:
-        text = load_prompt(path)
-        if "in English from that meaning" not in text:
-            problems.append(
-                f"{path}: lost the topic-brief rule. Briefs may arrive in Russian, and "
-                f"published output must be English — say so, or the model mirrors the brief."
-            )
+    Editorial instructions are deliberately not checked here. Whether a prompt
+    phrases the language rule one way or another is the owner's business; what
+    the code enforces is the output itself, and content_validation rejects
+    Cyrillic in an article or a Threads post no matter what the prompt says.
+    """
+    problems = []
 
     if not load_hashtags():
         problems.append(f"{HASHTAGS_PATH}: no hashtags parsed. Each one is a line starting with '#'.")

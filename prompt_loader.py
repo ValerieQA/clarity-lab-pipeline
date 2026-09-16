@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path
 
 ARTICLE_PROMPT_PATH   = Path("config/prompt.md")
@@ -14,6 +15,7 @@ STORIES_PROMPT_PATH   = Path("config/STORIES_PROMPT.md")
 LINKEDIN_PROMPT_PATH  = Path("config/LINKEDIN_PROMPT.md")
 SCENE_BANK_PATH       = Path("config/SCENE_BANK.md")
 HASHTAGS_PATH         = Path("config/HASHTAGS.md")
+ROTATION_CONTRACT_PATH = Path("config/rotation.toml")
 
 # An entry either sits on one line ("0 | muted terracotta") or opens a block of
 # its own ("## 0 | Lived-in interior" followed by prose). Both shapes are in
@@ -81,35 +83,50 @@ def _first_paragraph(body: list[str]) -> str:
     return ""
 
 
-_WORD_NUMBERS = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
-    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
-    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
-    "eighteen": 18, "nineteen": 19, "twenty": 20,
-}
+class MissingRotationContract(ValueError):
+    """A rotation section has no declared size, so nothing can be verified."""
 
 
-def declared_length(section: str, path: str | Path = IMAGE_PROMPT_PATH) -> int | None:
-    """The size a section claims for itself, or None when it claims nothing.
+def load_rotation_contract(path: str | Path = ROTATION_CONTRACT_PATH) -> dict[str, int]:
+    """Section name -> required number of entries, from config/rotation.toml.
 
-    Sections say either "wrap after 9" or "across thirteen states". Reading the
-    claim lets a check compare the prose against the parsed entries, so editing
-    a list without editing its number is caught.
+    The prompt file is prose for the model; this is the part the code reads.
+    Keeping the sizes here means a check never has to infer them from a
+    sentence someone is free to rewrite.
     """
-    for line in _section_lines(load_prompt(path), section):
-        found = re.search(r"wrap after (\d+)", line, re.IGNORECASE)
-        if found:
-            return int(found.group(1))
+    contract_path = Path(path)
+    if not contract_path.exists():
+        raise MissingRotationContract(f"Rotation contract not found: {contract_path}")
 
-        found = re.search(r"across (\w+) states", line, re.IGNORECASE)
-        if found:
-            word = found.group(1).lower()
-            if word.isdigit():
-                return int(word)
-            if word in _WORD_NUMBERS:
-                return _WORD_NUMBERS[word]
+    with contract_path.open("rb") as handle:
+        data = tomllib.load(handle)
 
-    return None
+    counts = data.get("counts")
+    if not isinstance(counts, dict) or not counts:
+        raise MissingRotationContract(f"{contract_path} declares no [counts] section")
+
+    for section, count in counts.items():
+        if not isinstance(count, int) or count < 1:
+            raise MissingRotationContract(
+                f"{contract_path}: '{section}' must declare a positive count, got {count!r}"
+            )
+
+    return counts
+
+
+def declared_length(section: str, path: str | Path = ROTATION_CONTRACT_PATH) -> int:
+    """The number of entries a rotation section must hold.
+
+    Raises rather than returning None: an undeclared section would otherwise
+    disable the very check that protects it.
+    """
+    counts = load_rotation_contract(path)
+    if section not in counts:
+        raise MissingRotationContract(
+            f"'{section}' is not declared in {Path(path)}. "
+            f"Declared sections: {', '.join(sorted(counts))}."
+        )
+    return counts[section]
 
 
 def load_visual_journey() -> list[dict]:

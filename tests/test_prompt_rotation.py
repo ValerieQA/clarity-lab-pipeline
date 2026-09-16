@@ -24,6 +24,7 @@ from prompt_loader import (  # noqa: E402
     THREADS_PROMPT_PATH,
     ARTICLE_PROMPT_PATH,
     declared_length,
+    load_rotation_contract,
     load_accent_states,
     load_compositions,
     load_hashtags,
@@ -49,7 +50,7 @@ def test_rotation_lists_match_the_length_they_declare(section):
     """The list and the sentence that counts it have to agree.
 
     The counts are allowed to change with the strategy — what is not allowed is
-    a list that parses as empty, or one that no longer matches its own prose.
+    a list that parses as empty, or one that no longer matches config/rotation.toml.
     """
     entries = ROTATION_SECTIONS[section]()
     assert entries, f"{section} parsed as empty; the rotation maths divides by its length"
@@ -61,7 +62,8 @@ def test_rotation_lists_match_the_length_they_declare(section):
 
 def test_rotation_lengths_are_pairwise_coprime():
     """Coprime lengths are what stop combinations repeating early."""
-    lengths = [13, 9, 7, 5]
+    contract = load_rotation_contract()
+    lengths = [contract[s] for s in ("Visual Journey", "Subject Families", "Composition", "Light")]
     for i, a in enumerate(lengths):
         for b in lengths[i + 1:]:
             assert gcd(a, b) == 1, f"{a} and {b} share a factor; images will repeat sooner"

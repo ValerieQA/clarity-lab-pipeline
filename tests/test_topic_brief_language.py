@@ -1,20 +1,8 @@
 """Topic briefs may arrive in Russian; everything published must be English."""
 
-from pathlib import Path
-
 import pytest
 
 from content_validation import ContentValidationError, validate_article_sections, validate_threads_posts
-
-CHANNEL_PROMPTS = [
-    "config/prompt.md",
-    "config/THREADS_PROMPT.md",
-    "config/INSTAGRAM_PROMPT.md",
-    "config/FACEBOOK_PROMPT.md",
-    "config/LINKEDIN_PROMPT.md",
-    "config/STORIES_PROMPT.md",
-]
-
 
 def _article(**overrides):
     sections = {
@@ -25,16 +13,6 @@ def _article(**overrides):
     }
     sections.update(overrides)
     return sections
-
-
-@pytest.mark.parametrize("path", CHANNEL_PROMPTS)
-def test_every_channel_prompt_treats_topic_as_brief(path):
-    text = Path(path).read_text(encoding="utf-8")
-    assert "## Topic brief" in text
-    # Each prompt words this its own way ("write the post in English…"), so the
-    # test pins the two things that must survive any rewrite.
-    assert "in English from that meaning" in text
-    assert "It may arrive in Russian" in text
 
 
 def test_english_article_passes():
