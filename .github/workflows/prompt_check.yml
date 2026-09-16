@@ -1,0 +1,91 @@
+name: Clarity Lab — Prompt Check
+
+# Prompts are edited directly, often from the GitHub web editor, whenever the
+# strategy changes. A rewrite can read perfectly and still break the parsers.
+# This runs on every prompt edit and opens an issue when something no longer
+# fits the code, so the break is visible before the next scheduled publish.
+
+on:
+  push:
+    paths:
+      - 'config/**'
+      - 'prompt_loader.py'
+      - 'scripts/check_prompts.py'
+  pull_request:
+    paths:
+      - 'config/**'
+      - 'prompt_loader.py'
+      - 'scripts/check_prompts.py'
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Prompts fit the code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+
+      - name: Check prompts against the code that reads them
+        id: check
+        run: python scripts/check_prompts.py 2>&1 | tee /tmp/prompt_check.txt
+
+      - name: Capture the failure
+        if: failure()
+        id: report
+        run: |
+          {
+            echo 'output<<PROMPT_EOF'
+            cat /tmp/prompt_check.txt
+            echo PROMPT_EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open an issue
+        if: failure() && github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              'A prompt edit no longer fits the code that reads it. The next scheduled run',
+              'will stop at the prompt check instead of publishing.',
+              '',
+              '```',
+              `${{ steps.report.outputs.output }}`,
+              '```',
+              '',
+              `Commit: ${context.sha}`,
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'Fix the file, or run `python scripts/check_prompts.py` locally to see the same list.',
+            ].join('\n');
+
+            const title = '⚠️ Prompt check failed — publishing is blocked';
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'prompt-alert',
+            });
+
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['prompt-alert', 'blocker'],
+              });
+            }
+    permissions:
+      contents: read
+      issues: write
