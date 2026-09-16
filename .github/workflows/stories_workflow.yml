@@ -23,6 +23,8 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Check prompts against the code that reads them
+        run: python scripts/check_prompts.py
 
       - name: Run Stories pipeline
         env:

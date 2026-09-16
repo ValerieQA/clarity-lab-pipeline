@@ -23,6 +23,7 @@ from prompt_loader import (  # noqa: E402
     LINKEDIN_PROMPT_PATH,
     THREADS_PROMPT_PATH,
     ARTICLE_PROMPT_PATH,
+    declared_length,
     load_accent_states,
     load_compositions,
     load_hashtags,
@@ -33,19 +34,29 @@ from prompt_loader import (  # noqa: E402
     load_visual_journey,
 )
 
-EXPECTED_COUNTS = {
-    "visual journey": (load_visual_journey, 13),
-    "subject families": (load_subject_families, 9),
-    "compositions": (load_compositions, 7),
-    "light states": (load_light_states, 5),
-    "accent states": (load_accent_states, 6),
+# Section heading in IMAGE_PROMPT.md -> the loader that reads it.
+ROTATION_SECTIONS = {
+    "Visual Journey": load_visual_journey,
+    "Subject Families": load_subject_families,
+    "Composition": load_compositions,
+    "Light": load_light_states,
+    "Accent States": load_accent_states,
 }
 
 
-@pytest.mark.parametrize("name", sorted(EXPECTED_COUNTS))
-def test_rotation_lists_have_expected_length(name):
-    loader, expected = EXPECTED_COUNTS[name]
-    assert len(loader()) == expected, f"{name} changed length; the rotation maths depends on it"
+@pytest.mark.parametrize("section", sorted(ROTATION_SECTIONS))
+def test_rotation_lists_match_the_length_they_declare(section):
+    """The list and the sentence that counts it have to agree.
+
+    The counts are allowed to change with the strategy — what is not allowed is
+    a list that parses as empty, or one that no longer matches its own prose.
+    """
+    entries = ROTATION_SECTIONS[section]()
+    assert entries, f"{section} parsed as empty; the rotation maths divides by its length"
+    assert len(entries) == declared_length(section), (
+        f"{section} holds {len(entries)} entries but its own text declares "
+        f"{declared_length(section)}"
+    )
 
 
 def test_rotation_lengths_are_pairwise_coprime():

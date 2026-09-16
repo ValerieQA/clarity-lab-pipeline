@@ -81,6 +81,37 @@ def _first_paragraph(body: list[str]) -> str:
     return ""
 
 
+_WORD_NUMBERS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
+    "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17,
+    "eighteen": 18, "nineteen": 19, "twenty": 20,
+}
+
+
+def declared_length(section: str, path: str | Path = IMAGE_PROMPT_PATH) -> int | None:
+    """The size a section claims for itself, or None when it claims nothing.
+
+    Sections say either "wrap after 9" or "across thirteen states". Reading the
+    claim lets a check compare the prose against the parsed entries, so editing
+    a list without editing its number is caught.
+    """
+    for line in _section_lines(load_prompt(path), section):
+        found = re.search(r"wrap after (\d+)", line, re.IGNORECASE)
+        if found:
+            return int(found.group(1))
+
+        found = re.search(r"across (\w+) states", line, re.IGNORECASE)
+        if found:
+            word = found.group(1).lower()
+            if word.isdigit():
+                return int(word)
+            if word in _WORD_NUMBERS:
+                return _WORD_NUMBERS[word]
+
+    return None
+
+
 def load_visual_journey() -> list[dict]:
     """Parse the Visual Journey section from IMAGE_PROMPT.md.
 

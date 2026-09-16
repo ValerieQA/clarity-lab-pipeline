@@ -14,6 +14,8 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install -r requirements.txt
+      - name: Check prompts against the code that reads them
+        run: python scripts/check_prompts.py
       - name: Run pipeline
         env:
           OPENAI_API_KEY:        ${{ secrets.OPENAI_API_KEY }}
