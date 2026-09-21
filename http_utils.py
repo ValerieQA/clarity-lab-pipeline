@@ -14,6 +14,23 @@ from structured_logging import log_event, redact
 
 RETRY_STATUSES = {429, 500, 502, 503, 504}
 
+# Meta answers 200 with an error payload when its fetcher could not read the
+# image yet, and describes that as the wrong media type. The upload is fine —
+# the same URL works minutes later — so creating the container is worth
+# another attempt. Container creation publishes nothing, so a retry is safe.
+TRANSIENT_MEDIA_ERRORS = (
+    "only photo or video can be accepted as media type",
+    "media upload has failed",
+    "unable to fetch",
+    "the media could not be fetched",
+)
+
+
+def is_transient_media_error(message: str) -> bool:
+    """True when a Meta media error is about fetching, not about the media."""
+    lowered = (message or "").lower()
+    return any(phrase in lowered for phrase in TRANSIENT_MEDIA_ERRORS)
+
 
 class HttpRequestError(Exception):
     def __init__(self, message: str, response: requests.Response | None = None):

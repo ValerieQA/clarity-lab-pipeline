@@ -19,7 +19,7 @@ import cloudinary
 import cloudinary.uploader
 
 from content_validation import ContentValidationError, parse_article_sections
-from http_utils import HttpClient, response_json_or_raise, summarize_response
+from http_utils import HttpClient, is_transient_media_error, response_json_or_raise, summarize_response
 from publication_state import PublicationState, write_topics
 from meta_tokens import validate_facebook_token, validate_instagram_token
 from runtime_config import FacebookConfig, FeatureFlags, InstagramConfig
@@ -481,6 +481,40 @@ def publish_to_wix(title, website_text, cloudinary_url):
 # STEP 8: Publish to Instagram
 # ============================================================
 
+def _create_instagram_container(image_url, caption):
+    """Ask Instagram for a media container, retrying a failed fetch.
+
+    Meta sometimes cannot read a freshly uploaded image and reports it as the
+    wrong media type. The image is valid — the same URL published minutes
+    later on 17 September after the same error on the 12th and the 15th.
+    Creating a container publishes nothing, so retrying costs only time.
+    """
+    last_error = ""
+
+    for attempt in range(1, FLAGS.http_max_retries + 1):
+        container = HTTP.post(
+            f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media",
+            platform="instagram",
+            data={"image_url": image_url, "caption": caption, "access_token": IG_TOKEN}
+        ).json()
+
+        if "error" not in container:
+            return container
+
+        last_error = container["error"].get("message", str(container["error"]))
+
+        if not is_transient_media_error(last_error) or attempt == FLAGS.http_max_retries:
+            raise Exception(f"[INSTAGRAM] Container error: {last_error}")
+
+        wait = attempt * 15
+        log_event(LOGGER, "instagram_container_retrying", logging.WARNING, platform="instagram",
+                  status="retrying", error=last_error, details={"attempt": attempt, "wait_seconds": wait})
+        print(f"[INSTAGRAM] Container attempt {attempt} failed ({last_error}) — retrying in {wait}s")
+        time.sleep(wait)
+
+    raise Exception(f"[INSTAGRAM] Container error: {last_error}")
+
+
 def publish_to_instagram(caption, image_url):
     print("[INSTAGRAM] Creating container...")
     if FLAGS.dry_run or not FLAGS.enable_instagram_publishing:
@@ -496,15 +530,8 @@ def publish_to_instagram(caption, image_url):
         print(f"[INSTAGRAM] Token invalid — skipping publish. Run retry after fixing IG_TOKEN secret.")
         raise Exception(f"[INSTAGRAM] Token invalid ({_ig_check.status}): {_ig_check.error}")
 
-    container_response = HTTP.post(
-        f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media",
-        platform="instagram",
-        data={"image_url": image_url, "caption": caption, "access_token": IG_TOKEN}
-    )
-    container = container_response.json()
+    container = _create_instagram_container(image_url, caption)
 
-    if "error" in container:
-        raise Exception(f"[INSTAGRAM] Container error: {container['error']['message']}")
     if "id" not in container:
         raise Exception(f"[INSTAGRAM] Unexpected: {container}")
 
