@@ -1,0 +1,78 @@
+{
+  "generated_at": "2026-09-21T13:31:06.013618+00:00",
+  "window_start": "2026-09-14T13:31:06.013618+00:00",
+  "published_posts_count": 2,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_7ca0e628985d5b09",
+      "external_threads_id": "18069119567736975",
+      "score": 0,
+      "text_preview": "She pauses mid-sentence, seeing his eyes glaze over. Her enthusiasm retreats, leaving space for the mundane. The unspoken topic lingers, resurfacing later as tension over the dishwasher. The subject doesn't vanish; it mutates, waiting for a"
+    },
+    {
+      "post_id": "threads_3fffabe562ac4523",
+      "external_threads_id": "18631868437006684",
+      "score": 0,
+      "text_preview": "The dinner table conversation shifts again. She mentions her favorite topic, and eyes glaze over. Nobody wants another round. The enthusiasm retreats inside, only to resurface as tension over who left the dishes undone. The unspoken words l"
+    }
+  ],
+  "most_common_themes": [
+    [
+      "glaze",
+      2
+    ],
+    [
+      "enthusiasm",
+      2
+    ],
+    [
+      "retreats",
+      2
+    ],
+    [
+      "unspoken",
+      2
+    ],
+    [
+      "topic",
+      2
+    ],
+    [
+      "tension",
+      2
+    ],
+    [
+      "waiting",
+      2
+    ],
+    [
+      "pauses",
+      1
+    ],
+    [
+      "sentence",
+      1
+    ],
+    [
+      "seeing",
+      1
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [
+    "tension"
+  ],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind glaze",
+    "Explore the hidden pattern behind enthusiasm",
+    "Explore the hidden pattern behind retreats",
+    "Explore the hidden pattern behind unspoken",
+    "Explore the hidden pattern behind topic"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'glaze'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}
