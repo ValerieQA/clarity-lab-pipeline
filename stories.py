@@ -9,6 +9,7 @@ import os
 import csv
 import re
 import tempfile
+import time
 import requests
 import logging
 from datetime import datetime
@@ -18,7 +19,7 @@ import numpy as np
 import cloudinary
 import cloudinary.uploader
 
-from http_utils import HttpClient
+from http_utils import HttpClient, is_transient_media_error
 from runtime_config import FeatureFlags
 from structured_logging import get_logger, log_event
 from prompt_loader import STORIES_PROMPT_PATH, load_prompt
@@ -332,7 +333,6 @@ def upload_story_to_cloudinary(image_path, title):
             if attempt >= FLAGS.http_max_retries:
                 raise
             log_event(LOGGER, "cloudinary_story_upload_retry", logging.WARNING, platform="cloudinary", status="retrying", error=str(exc))
-            import time
             time.sleep(2 ** (attempt - 1))
     else:
         raise last_error
@@ -367,6 +367,27 @@ def publish_instagram_story(image_url):
 
     container = container_response.json()
 
+    # Meta reports an image it could not fetch yet as the wrong media type.
+    # The Story that failed this way on 12 and 15 September published on the
+    # 17th unchanged, so the fetch is worth another attempt before giving up.
+    attempt = 1
+    while "error" in container and is_transient_media_error(container["error"].get("message", "")) \
+            and attempt < FLAGS.http_max_retries:
+        wait = attempt * 15
+        print(f"[INSTAGRAM STORY] Container attempt {attempt} failed "
+              f"({container['error'].get('message', '')}) — retrying in {wait}s")
+        time.sleep(wait)
+        attempt += 1
+        container = HTTP.post(
+            f"https://graph.facebook.com/v19.0/{IG_USER_ID}/media",
+            platform="instagram",
+            data={
+                "image_url": image_url,
+                "media_type": "STORIES",
+                "access_token": IG_TOKEN
+            }
+        ).json()
+
     if "error" in container:
         raise Exception(f"[INSTAGRAM STORY] Container error: {container['error']['message']}")
     if "id" not in container:
@@ -376,7 +397,6 @@ def publish_instagram_story(image_url):
     print(f"[INSTAGRAM STORY] Container: {container_id}")
 
     # Wait for processing
-    import time
     for attempt in range(1, 11):
         print(f"[INSTAGRAM STORY] Status check {attempt}/10...")
         status_data = HTTP.get(

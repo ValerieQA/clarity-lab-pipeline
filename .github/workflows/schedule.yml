@@ -35,7 +35,11 @@ jobs:
           ENABLE_THREADS_PUBLISHING: 'false'
           ENABLE_TOKEN_REFRESH:  'false'
         run: python pipeline.py
+      # Must run even when the pipeline exits non-zero. A partial failure
+      # publishes some channels and records that in topics.csv; skipping the
+      # commit loses the record, and the next run republishes the same topic.
       - name: Commit updated topics.csv
+        if: always()
         run: |
           git config --global user.name "Clarity Lab Bot"
           git config --global user.email "bot@inneros.online"
