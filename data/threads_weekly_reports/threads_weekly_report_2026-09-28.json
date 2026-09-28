@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-09-28T14:48:06.719720+00:00",
+  "window_start": "2026-09-21T14:48:06.719720+00:00",
+  "published_posts_count": 2,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_83db68c24aae31cf",
+      "external_threads_id": "17948693766315187",
+      "score": 0,
+      "text_preview": "She stays on the call until they know what to do. Later, her own thoughts remain untold, lingering in the silence of the room. The listener who everyone turns to is left with her own unspoken week, unnoticed, because she never leaves a paus"
+    },
+    {
+      "post_id": "threads_5a2a37d279c35fb2",
+      "external_threads_id": "18126004021844273",
+      "score": 0,
+      "text_preview": "She listens as her friend unravels another story. Later, she recalls details from everyone else's week, but her own voice is lost in the background. No one asks, and she doesn't offer, because the silence doesn't break when you're the one h"
+    }
+  ],
+  "most_common_themes": [
+    [
+      "later",
+      2
+    ],
+    [
+      "silence",
+      2
+    ],
+    [
+      "everyone",
+      2
+    ],
+    [
+      "doesn",
+      2
+    ],
+    [
+      "stays",
+      1
+    ],
+    [
+      "until",
+      1
+    ],
+    [
+      "thoughts",
+      1
+    ],
+    [
+      "remain",
+      1
+    ],
+    [
+      "untold",
+      1
+    ],
+    [
+      "lingering",
+      1
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind later",
+    "Explore the hidden pattern behind silence",
+    "Explore the hidden pattern behind everyone",
+    "Explore the hidden pattern behind doesn",
+    "Explore the hidden pattern behind stays"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'later'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}
