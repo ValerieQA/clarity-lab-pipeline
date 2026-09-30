@@ -19,8 +19,8 @@ import cloudinary
 import cloudinary.uploader
 
 from content_validation import ContentValidationError, parse_article_sections
-from http_utils import HttpClient, is_transient_media_error, response_json_or_raise, summarize_response
-from publication_state import PublicationState, write_topics
+from http_utils import HttpClient, describe_meta_error, is_transient_media_error, response_json_or_raise, summarize_response
+from publication_state import PublicationState, external_id_field, write_topics
 from meta_tokens import validate_facebook_token, validate_instagram_token
 from runtime_config import FacebookConfig, FeatureFlags, InstagramConfig
 from structured_logging import get_logger, log_event
@@ -149,8 +149,10 @@ def mark_topic_state(index, rows, post_url, master_image_url, state: Publication
     errors = []
     for platform, result in state.platform_results.items():
         rows[index][f"{platform.capitalize()} Status"] = result.status
-        if platform == "threads" and result.external_id:
-            rows[index]["Threads External ID"] = result.external_id
+        # Every id a platform hands back is kept. Without it there is nothing
+        # to ask the platform about later, so metrics cannot be collected.
+        if result.external_id:
+            rows[index][external_id_field(platform)] = result.external_id
         if result.error:
             errors.append(f"{platform}: {result.error[:200]}")
     rows[index]["Publication Errors"] = " | ".join(errors)
@@ -501,7 +503,7 @@ def _create_instagram_container(image_url, caption):
         if "error" not in container:
             return container
 
-        last_error = container["error"].get("message", str(container["error"]))
+        last_error = describe_meta_error(container["error"])
 
         if not is_transient_media_error(last_error) or attempt == FLAGS.http_max_retries:
             raise Exception(f"[INSTAGRAM] Container error: {last_error}")
