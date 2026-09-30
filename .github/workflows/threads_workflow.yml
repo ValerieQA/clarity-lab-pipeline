@@ -36,6 +36,8 @@ jobs:
   publish:
     name: Publish Threads post
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     if: |
       (github.event_name == 'schedule' && github.event.schedule == '0 12 * * *') ||
       (github.event_name == 'workflow_dispatch' && (
@@ -100,6 +102,8 @@ jobs:
   collect_comments:
     name: Collect Threads comments
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     if: |
       (github.event_name == 'schedule' && github.event.schedule == '0 21 * * *') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'collect_comments')
@@ -148,6 +152,8 @@ jobs:
   weekly_report:
     name: Weekly learning report
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     if: |
       (github.event_name == 'schedule' && github.event.schedule == '0 7 * * 1') ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'weekly_report')
