@@ -121,12 +121,29 @@ def recent_summaries(rows: list[dict], window: int = RECENT_WINDOW) -> str:
 # Generation
 # ----------------------------------------------------------------------------
 
-def _next_topic() -> dict:
+def _next_topic(history: list[dict] | None = None) -> dict:
+    """The usable topic that has gone to LinkedIn least recently.
+
+    Taking the first usable row means taking the same row forever: the top of
+    topics.csv never changes. Ordering by when a topic was last drafted makes
+    the channel work through the whole file, and an untouched topic — having
+    no last-draft time at all — comes first.
+    """
     rows = _read_rows(TOPICS_FILE)
-    for row in rows:
-        if row.get("Status", "").strip().lower() in {"ready", "published"}:
-            return row
-    raise RuntimeError("No usable topic found in topics.csv")
+    usable = [r for r in rows if r.get("Status", "").strip().lower() in {"ready", "published"}]
+    if not usable:
+        raise RuntimeError("No usable topic found in topics.csv")
+
+    last_drafted: dict[str, str] = {}
+    for entry in history or []:
+        title = (entry.get("source_topic") or "").strip()
+        if title:
+            last_drafted[title] = entry.get("created_at", "")
+
+    def drafted_at(row: dict) -> str:
+        return last_drafted.get(row.get("Topic / Working Title", "").strip(), "")
+
+    return min(usable, key=drafted_at)
 
 
 def parse_sections(raw: str) -> tuple[str, str, str]:
@@ -339,7 +356,7 @@ def _email(subject_body: str) -> None:
 
 def create_draft() -> dict:
     history = load_posts()
-    topic = _next_topic()
+    topic = _next_topic(history)
     text_en, text_ru, case = generate_post(topic, history)
 
     row = {
@@ -430,6 +447,15 @@ def main() -> int:
     parser.add_argument("--publish-due", action="store_true",
                         help="publish rows already marked approved")
     args = parser.parse_args()
+
+    # A client with no LinkedIn credentials has no LinkedIn channel. Writing
+    # drafts nobody can publish costs model calls and sends mail every run,
+    # so the channel stays dormant until a token exists.
+    if not LI.access_token:
+        log_event(LOGGER, "linkedin_not_configured", platform="linkedin", status="skipped",
+                  details={"reason": "LINKEDIN_ACCESS_TOKEN is not set"})
+        print("[LINKEDIN] No LINKEDIN_ACCESS_TOKEN — channel not configured, nothing generated.")
+        return 0
 
     try:
         if args.publish_due:

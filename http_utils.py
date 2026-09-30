@@ -26,6 +26,25 @@ TRANSIENT_MEDIA_ERRORS = (
 )
 
 
+def describe_meta_error(error: dict) -> str:
+    """Meta's error with its codes attached.
+
+    The message alone is often misleading — a media it could not fetch is
+    reported as the wrong media type. The numeric code and the trace id are
+    what make one occurrence comparable to the next.
+    """
+    if not isinstance(error, dict):
+        return str(error)
+
+    message = error.get("message", "unknown error")
+    parts = []
+    for label, key in (("code", "code"), ("subcode", "error_subcode"), ("trace", "fbtrace_id")):
+        value = error.get(key)
+        if value not in (None, ""):
+            parts.append(f"{label} {value}")
+    return f"{message} [{', '.join(parts)}]" if parts else message
+
+
 def is_transient_media_error(message: str) -> bool:
     """True when a Meta media error is about fetching, not about the media."""
     lowered = (message or "").lower()

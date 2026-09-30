@@ -19,7 +19,8 @@ import numpy as np
 import cloudinary
 import cloudinary.uploader
 
-from http_utils import HttpClient, is_transient_media_error
+from http_utils import HttpClient, describe_meta_error, is_transient_media_error
+from publication_state import write_topics
 from runtime_config import FeatureFlags
 from structured_logging import get_logger, log_event
 from prompt_loader import STORIES_PROMPT_PATH, load_prompt
@@ -389,7 +390,7 @@ def publish_instagram_story(image_url):
         ).json()
 
     if "error" in container:
-        raise Exception(f"[INSTAGRAM STORY] Container error: {container['error']['message']}")
+        raise Exception(f"[INSTAGRAM STORY] Container error: {describe_meta_error(container['error'])}")
     if "id" not in container:
         raise Exception(f"[INSTAGRAM STORY] Unexpected response: {container}")
 
@@ -437,6 +438,20 @@ def publish_instagram_story(image_url):
 # MAIN
 # ============================================================
 
+def record_story_id(index: int, story_id: str, story_url: str) -> None:
+    """Write the published story's id back to its topic row."""
+    if not story_id or story_id.startswith("dry-run"):
+        return
+
+    with open(TOPICS_FILE, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+
+    rows[index]["Story ID"] = story_id
+    rows[index]["Story Image URL"] = story_url
+    write_topics(TOPICS_FILE, rows)
+    print(f"[STORY] Recorded story id {story_id} on row {index + 1}")
+
+
 def run_stories_pipeline():
     print(f"\n{'='*60}")
     print(f"Clarity Lab Stories Pipeline — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
@@ -478,12 +493,17 @@ def run_stories_pipeline():
     story_url = upload_story_to_cloudinary(story_image_path, topic["Topic / Working Title"])
 
     # Publish to Instagram
-    publish_instagram_story(story_url)
+    story_id = publish_instagram_story(story_url)
+
+    # Keep the id: story insights can only be asked for by media id, and a
+    # story is gone from the platform in 24 hours.
+    record_story_id(index, story_id, story_url)
 
     print(f"\n{'='*60}")
     print(f"✅ Story published!")
     print(f"   Topic: {topic['Topic / Working Title']}")
     print(f"   Type: {story_type}")
+    print(f"   Story ID: {story_id}")
     print(f"{'='*60}\n")
 
 if __name__ == "__main__":

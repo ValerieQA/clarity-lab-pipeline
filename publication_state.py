@@ -55,8 +55,26 @@ class PublicationState:
         return self.status
 
 
+def external_id_field(platform: str) -> str:
+    """Column that holds the id a platform returned when it published.
+
+    The name is derived, not looked up, so a channel added later records its
+    id without anyone editing a mapping. Threads keeps its historical column.
+    """
+    if platform == "threads":
+        return "Threads External ID"
+    return f"{platform.capitalize()} Post ID"
+
+
 def ensure_topic_state_fields(rows: list[dict[str, Any]]) -> list[str]:
-    fieldnames = list(rows[0].keys()) if rows else []
+    # Union of every row's keys, in first-seen order: a column written to one
+    # row only — a new channel's id, for instance — must not be dropped.
+    fieldnames: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in fieldnames:
+                fieldnames.append(key)
+
     for field in [
         "Pipeline State",
         "Wix Status",
