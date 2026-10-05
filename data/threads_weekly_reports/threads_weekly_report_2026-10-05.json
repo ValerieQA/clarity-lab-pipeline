@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-10-05T15:26:56.138024+00:00",
+  "window_start": "2026-09-28T15:26:56.138024+00:00",
+  "published_posts_count": 4,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_320dfa7142910ea2",
+      "external_threads_id": "18005348055007161",
+      "score": 0,
+      "text_preview": "She stands in the kitchen, staring at the floor, a question in her mind that seems fit for someone half her age. Every year adds another layer of silence over it, and the gap between her age and the question widens, making it harder to voic"
+    },
+    {
+      "post_id": "threads_5c22e4c40c29d03c",
+      "external_threads_id": "18139328392543811",
+      "score": 0,
+      "text_preview": "She picks up the phone and her thumb hesitates over a contact. The question feels too young for her forty-five years. She puts the phone down. The gap between her age and the question grows, amplifying the silence. The years pile on, but th"
+    },
+    {
+      "post_id": "threads_6746ca491a985ca3",
+      "external_threads_id": "17985090309119316",
+      "score": 0,
+      "text_preview": "She explains her hard week, and the listener nods with sympathy, offering words meant to console. The conversation stalls, wrapped in comfort that feels like a conclusion. What she wanted was just one more question—a sign it was okay to con"
+    },
+    {
+      "post_id": "threads_6c41a7f9190c1b36",
+      "external_threads_id": "18111857309028303",
+      "score": 0,
+      "text_preview": "She shares a challenging week, and before she finishes, someone offers comfort. The conversation wraps up, as if the problem is solved. What she hoped for was just one more question, to keep talking about it without being wrapped in pity."
+    }
+  ],
+  "most_common_themes": [
+    [
+      "question",
+      7
+    ],
+    [
+      "someone",
+      2
+    ],
+    [
+      "silence",
+      2
+    ],
+    [
+      "unanswered",
+      2
+    ],
+    [
+      "phone",
+      2
+    ],
+    [
+      "feels",
+      2
+    ],
+    [
+      "years",
+      2
+    ],
+    [
+      "conversation",
+      2
+    ],
+    [
+      "wrapped",
+      2
+    ],
+    [
+      "comfort",
+      2
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind question",
+    "Explore the hidden pattern behind someone",
+    "Explore the hidden pattern behind silence",
+    "Explore the hidden pattern behind unanswered",
+    "Explore the hidden pattern behind phone"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'question'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}

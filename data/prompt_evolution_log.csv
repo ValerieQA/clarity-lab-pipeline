@@ -17,3 +17,4 @@ created_at,source,recommendation,rationale,status
 2026-09-14T13:32:08.325589+00:00,threads_weekly_report,Keep current Threads prompt unchanged until more comments are collected.,Insufficient recent engagement signal for safe prompt evolution.,recommended_not_applied
 2026-09-21T13:31:06.014863+00:00,threads_weekly_report,Test one Threads opening that names the audience tension around 'glaze'.,This theme appeared most often in recent posts/comments.,recommended_not_applied
 2026-09-28T14:48:06.720962+00:00,threads_weekly_report,Test one Threads opening that names the audience tension around 'later'.,This theme appeared most often in recent posts/comments.,recommended_not_applied
+2026-10-05T15:26:56.139254+00:00,threads_weekly_report,Test one Threads opening that names the audience tension around 'question'.,This theme appeared most often in recent posts/comments.,recommended_not_applied
