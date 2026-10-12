@@ -1,0 +1,96 @@
+{
+  "generated_at": "2026-10-12T16:22:19.611625+00:00",
+  "window_start": "2026-10-05T16:22:19.611625+00:00",
+  "published_posts_count": 3,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_79eadf11986628d3",
+      "external_threads_id": "17961460044217375",
+      "score": 0,
+      "text_preview": "She starts typing a message, imagines how it will hang in the air between them next time, and deletes it. The weight of unsent words feels lighter than the risk of changing how they're seen."
+    },
+    {
+      "post_id": "threads_25599c9b0805ad80",
+      "external_threads_id": "18633017749020508",
+      "score": 0,
+      "text_preview": "She starts to explain the latest business challenge at dinner. Halfway through, she notices the familiar glazed expressions. The updates, once eagerly shared, now met with quiet nods. Decisions queue up in her mind, awaiting their silent tu"
+    },
+    {
+      "post_id": "threads_62780b22f97528d8",
+      "external_threads_id": "17920067814448463",
+      "score": 0,
+      "text_preview": "She starts to share the latest business decision over dinner. The family listens politely, nodding at the right moments. By dessert, the conversation has shifted, and her updates are left unspoken. The decisions continue, made quietly in th"
+    }
+  ],
+  "most_common_themes": [
+    [
+      "starts",
+      3
+    ],
+    [
+      "latest",
+      2
+    ],
+    [
+      "business",
+      2
+    ],
+    [
+      "dinner",
+      2
+    ],
+    [
+      "familiar",
+      2
+    ],
+    [
+      "updates",
+      2
+    ],
+    [
+      "decisions",
+      2
+    ],
+    [
+      "typing",
+      1
+    ],
+    [
+      "message",
+      1
+    ],
+    [
+      "imagines",
+      1
+    ]
+  ],
+  "strongest_comments": [
+    {
+      "comment_id": "17981256525066648",
+      "post_id": "17920067814448463",
+      "author": "evievrmln",
+      "comment_text": "? I don't get it",
+      "created_at": "2026-10-08T18:38:51+0000",
+      "collected_at": "2026-10-09T00:59:09.725106+00:00",
+      "weight": "1"
+    }
+  ],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind starts",
+    "Explore the hidden pattern behind latest",
+    "Explore the hidden pattern behind business",
+    "Explore the hidden pattern behind dinner",
+    "Explore the hidden pattern behind familiar"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'starts'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    },
+    {
+      "recommendation": "Add one prompt instruction to invite grounded audience reflection, not advice-giving.",
+      "rationale": "The strongest comments tend to contain personal tension and may benefit from reflective follow-up prompts."
+    }
+  ]
+}
