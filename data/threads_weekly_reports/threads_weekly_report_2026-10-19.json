@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-10-19T14:12:53.179872+00:00",
+  "window_start": "2026-10-12T14:12:53.179872+00:00",
+  "published_posts_count": 4,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_551d4d5b8058c981",
+      "external_threads_id": "17960676954235976",
+      "score": 0,
+      "text_preview": "The therapy room is familiar. She knows she’s heard and understood. Yet, the words that matter most remain unspoken, lingering in her mind. They wait quietly, knowing that the cost of admission is too high. One day, they hope for a place wh"
+    },
+    {
+      "post_id": "threads_6c613c730de66468",
+      "external_threads_id": "18091918868689231",
+      "score": 0,
+      "text_preview": "She sits in the familiar chair, recounting her week. The session's comfort is undeniable, yet one thought remains unsaid. It's the costly admission, the one that could shift everything. She saves it, waiting for a moment when speaking it wo"
+    },
+    {
+      "post_id": "threads_56827b8dd967fa3e",
+      "external_threads_id": "17991783795062060",
+      "score": 0,
+      "text_preview": "She types a message to her therapist on Sunday night, hesitates, and deletes it. Her session is set for Wednesday. By then, the urgency will feel distant, the words less pressing, as if the need to talk has a rhythm that doesn’t align with "
+    },
+    {
+      "post_id": "threads_dd18c05d6ca2dc6e",
+      "external_threads_id": "18030523139752484",
+      "score": 0,
+      "text_preview": "The need to talk arrives uninvited, Sunday night or Tuesday afternoon. But the session is Wednesday. By then, the urgency dissolves into a faint echo. The unspoken words linger, waiting for their moment, yet Wednesday feels a lifetime away."
+    }
+  ],
+  "most_common_themes": [
+    [
+      "words",
+      3
+    ],
+    [
+      "session",
+      3
+    ],
+    [
+      "wednesday",
+      3
+    ],
+    [
+      "familiar",
+      2
+    ],
+    [
+      "unspoken",
+      2
+    ],
+    [
+      "admission",
+      2
+    ],
+    [
+      "waiting",
+      2
+    ],
+    [
+      "moment",
+      2
+    ],
+    [
+      "sunday",
+      2
+    ],
+    [
+      "night",
+      2
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind words",
+    "Explore the hidden pattern behind session",
+    "Explore the hidden pattern behind wednesday",
+    "Explore the hidden pattern behind familiar",
+    "Explore the hidden pattern behind unspoken"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'words'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}
