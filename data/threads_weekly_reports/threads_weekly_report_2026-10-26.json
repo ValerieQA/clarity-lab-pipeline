@@ -1,0 +1,88 @@
+{
+  "generated_at": "2026-10-26T13:46:19.443434+00:00",
+  "window_start": "2026-10-19T13:46:19.443434+00:00",
+  "published_posts_count": 4,
+  "best_performing_posts": [
+    {
+      "post_id": "threads_57c4d05bdebe6584",
+      "external_threads_id": "18462580417186900",
+      "score": 0,
+      "text_preview": "The small-town therapist's parking lot is in full view. Her car is noticed before she even steps inside. The session is private, but everyone knowing she’s there isn't. Privacy isn't an option; it’s the deciding factor in whether she even m"
+    },
+    {
+      "post_id": "threads_015ae7498bc1184f",
+      "external_threads_id": "18116914547021864",
+      "score": 0,
+      "text_preview": "She parks outside the therapist's office. By the time she steps inside, the familiar cars passing on the road have already filed her visit away as news. Privacy isn't just a choice here; it's an obstacle to even starting."
+    },
+    {
+      "post_id": "threads_c1aa7cabfb446123",
+      "external_threads_id": "17894230278432837",
+      "score": 0,
+      "text_preview": "She steps inside her home. The confident facade stays with her, even here. The uncertainty, tucked away all day, now seeps out as impatience with her partner over small things. She wonders how long she can keep holding it in; it has nowhere"
+    },
+    {
+      "post_id": "threads_4a852bc6d871de6a",
+      "external_threads_id": "18286969075289791",
+      "score": 0,
+      "text_preview": "He closes the office door and sighs, dropping the confident mask. At home, the responsibility doesn't fade. Uncertainty clings, finding no voice until impatience slips out at the dinner table. The team sees a leader; his family catches the "
+    }
+  ],
+  "most_common_themes": [
+    [
+      "steps",
+      3
+    ],
+    [
+      "inside",
+      3
+    ],
+    [
+      "small",
+      2
+    ],
+    [
+      "therapist",
+      2
+    ],
+    [
+      "privacy",
+      2
+    ],
+    [
+      "office",
+      2
+    ],
+    [
+      "confident",
+      2
+    ],
+    [
+      "uncertainty",
+      2
+    ],
+    [
+      "impatience",
+      2
+    ],
+    [
+      "parking",
+      1
+    ]
+  ],
+  "strongest_comments": [],
+  "repeated_tensions": [],
+  "suggested_article_ideas": [
+    "Explore the hidden pattern behind steps",
+    "Explore the hidden pattern behind inside",
+    "Explore the hidden pattern behind small",
+    "Explore the hidden pattern behind therapist",
+    "Explore the hidden pattern behind privacy"
+  ],
+  "suggested_prompt_evolution_recommendations": [
+    {
+      "recommendation": "Test one Threads opening that names the audience tension around 'steps'.",
+      "rationale": "This theme appeared most often in recent posts/comments."
+    }
+  ]
+}
