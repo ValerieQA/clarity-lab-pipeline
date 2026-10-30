@@ -1,0 +1,112 @@
+{
+  "analysis_date": "2026-10-30",
+  "generated_at": "2026-10-30T16:47:15.299021+00:00",
+  "cycle_summary": {
+    "total_topics": 50,
+    "published_topics": 47,
+    "failed_topics": 1,
+    "remaining_topics": 2,
+    "inventory_status": "warning"
+  },
+  "facts": {
+    "published_topic_titles": [
+      "The difference between information and orientation",
+      "Why clarity reduces anxiety",
+      "What it means to think in circles",
+      "The gap between knowing and living",
+      "How AI reflects the structure of your thinking",
+      "Why asking the right question matters more than having the right answer",
+      "The difference between a reaction and a response",
+      "What personalization actually means in AI",
+      "How language shapes what we are able to notice",
+      "The quiet cost of self-monitoring",
+      "What it feels like to be seen accurately",
+      "Why some insights do not stick",
+      "The relationship between attention and meaning",
+      "What Human Design reveals and what it cannot",
+      "The difference between coping and integrating",
+      "When silence is not avoidance",
+      "The role of contradiction in self-understanding",
+      "How memory shapes present perception",
+      "What it means to trust your own thinking",
+      "The difference between complexity and confusion",
+      "Why some people resist being understood",
+      "What Gene Keys reveal about repeated patterns",
+      "The cost of explaining yourself",
+      "How an AI assistant changes the experience of self-reflection",
+      "What alignment actually feels like",
+      "The difference between being honest and being clear",
+      "Why the same feedback lands differently at different times",
+      "What it means to live from your nature rather than against it",
+      "The quiet presence of an accurate witness",
+      "They've got their own problems",
+      "The subject nobody at home wants",
+      "The fourth time telling it",
+      "An hour that belongs to you",
+      "The listener nobody listens to",
+      "Saying it once, out loud",
+      "Too old for this question",
+      "Please don't feel sorry for me",
+      "A cupboard full of advice",
+      "What telling costs",
+      "The business nobody at home wants to hear about",
+      "The morning after being honest",
+      "The part left out of therapy",
+      "Wednesday is too far away",
+      "Never learned how to ask",
+      "In a town where the car gets recognised",
+      "Forty minutes off the role",
+      "Someone who knows none of your people"
+    ],
+    "failed_topic_titles": [
+      "The pattern you keep returning to"
+    ],
+    "top_content_pillars": [
+      "No One to Tell",
+      "Patterns & Self-knowledge",
+      "Clarity as Process"
+    ],
+    "threads_posts_count": 158,
+    "threads_comments_count": 3,
+    "posts_with_comments": 3,
+    "comment_themes": [],
+    "channel_counts": {
+      "wix": 45,
+      "instagram": 44,
+      "facebook": 45,
+      "threads": 130
+    },
+    "threads_status_column_count": 0,
+    "evidence_level": "weak"
+  },
+  "interpretation": {
+    "what_strategy_was_tested": "Content across 3 pillar(s): No One to Tell, Patterns & Self-knowledge, Clarity as Process.",
+    "strongest_signal_channel": "None — no channel produced enough response to be called strongest.",
+    "evidence_level": "weak",
+    "evidence_note": "Not enough audience response to draw conclusions: 3 comment(s), 3 post(s) with any reply, no engagement metrics collected. Themes and 'what to continue' are intentionally left empty — reporting frequent words from this little text would be noise presented as a finding.",
+    "comment_topics_worth_continuing": [],
+    "best_performing_posts": [],
+    "what_is_unclear_due_to_missing_data": [
+      "WEAK SIGNAL: fewer than 5 Threads comments collected — comment theme analysis is not statistically meaningful."
+    ],
+    "recent_prompt_evolution": [
+      "Add one prompt instruction to invite grounded audience reflection, not advice-giving.",
+      "Test one Threads opening that names the audience tension around 'words'.",
+      "Test one Threads opening that names the audience tension around 'steps'."
+    ]
+  },
+  "recommendations": {
+    "continue": [],
+    "stop_or_test_differently": [
+      "The pattern you keep returning to"
+    ],
+    "missing_data_to_resolve": [
+      "WEAK SIGNAL: fewer than 5 Threads comments collected — comment theme analysis is not statistically meaningful."
+    ],
+    "next_steps": [
+      "Collect Instagram and Facebook post IDs to enable metric collection.",
+      "Ensure Threads comments are collected before running strategy analysis.",
+      "Review Wix dashboard for article view counts (not available via API)."
+    ]
+  }
+}
